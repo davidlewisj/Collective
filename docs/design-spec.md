@@ -23,7 +23,7 @@ Per the working rules, assumptions are stated up front. Because this spec was pr
 ### Clarifying questions (max 5, carried into §8 with recommended defaults)
 
 1. **Which entity list and boundaries?** How many legal entities, and do any share workforce/BAA umbrellas? (Drives tenancy and retention partitioning, §3.3.)
-2. **Is Claude access needed inside claude.ai/Claude Desktop, or only inside our app?** The MCP server can serve both, but PHI exposure through claude.ai requires the org's own Anthropic enterprise agreement + BAA (§6.4). Default: in-app assistant first.
+2. **Is Claude access needed inside claude.ai/Claude Desktop, or only inside our app?** The MCP server can serve both, but PHI exposure through claude.ai requires the org's own Anthropic enterprise agreement + BAA (§6.4). **Resolved (2026-07-19): in-app assistant only for v1**; external Claude clients via MCP are deferred to v2 (§6.2).
 3. **Will any recordings be treated as part of the designated record set** (subject to patient access/amendment rights)? Default assumption: no (A3).
 4. **Is BYOD mobile permitted**, or only managed devices? Default: managed devices or MDM-enrolled BYOD for mobile capture.
 5. **Direct Anthropic API (with BAA + zero-data-retention) or AWS Bedrock** as the Claude path? Both are designed for in §6.5; default recommendation is direct Anthropic with ZDR, Bedrock as the fallback if procurement prefers a single AWS BAA.
@@ -155,7 +155,7 @@ Plus record-level metadata: calendar linkage, participants (attendees vs. detect
 ### 2.5 Claude integration (summarized here; full design in §6)
 
 - **Post-meeting processing:** on stop, the backend sends the final transcript plus the requesting user's notes to the Claude API (recommended model: `claude-sonnet-5`) to produce the title, summary, and action items — under Anthropic's BAA with zero-data-retention semantics (§6.5). Minimum-necessary applies: attributed names, transcript text, and the author's notes go; audio, attendee emails, calendar bodies, and other users' private notes do not.
-- **On-demand reference:** a permission-aware **MCP server** exposes the archive (`search_meetings`, `get_meeting`, `get_transcript`, `get_action_items`, …) so users can ask Claude about any past meeting. Auth is OAuth 2.1 against the org IdP; every tool result is filtered to the caller's access and audit-logged. **Verified constraint that shapes the design:** Anthropic's HIPAA-eligible API surface excludes its hosted MCP-connector path, so the in-app assistant runs the tool loop itself against the Messages API, while the MCP server serves HIPAA-covered Claude Enterprise clients (§6.4).
+- **On-demand reference:** a permission-aware **MCP server** exposes the archive (`search_meetings`, `get_meeting`, `get_transcript`, `get_action_items`, …) so users can ask Claude about any past meeting. Auth is OAuth 2.1 against the org IdP; every tool result is filtered to the caller's access and audit-logged. **Verified constraint that shapes the design:** Anthropic's HIPAA-eligible API surface excludes its hosted MCP-connector path, so the in-app assistant runs the tool loop itself against the Messages API, while the MCP server serves HIPAA-covered Claude Enterprise clients (§6.4). **Scope (resolved Q2):** v1 ships the in-app assistant only; the external MCP endpoint opens in v2.
 ### 2.6 HIPAA compliance & consent (design constraints, not features)
 
 The full requirement→control matrix is §4; this section specifies the user-facing and policy machinery.
@@ -432,7 +432,7 @@ Justification of the recommendation: the two strong self-hosted models are effec
 
 **Path A — in-app assistant (primary, all users):** a chat surface inside Collective. The insight service runs the agentic tool loop itself against the **Messages API with tool use** (HIPAA-eligible, verified) — Claude requests `search_meetings(...)`, the backend executes it **in-process with the user's own authorization context**, returns results, Claude answers ("What did we decide about the inventory import last Tuesday?"). Identical tool semantics to the MCP server — one tool implementation, two front doors.
 
-**Path B — external Claude clients via MCP (org-controlled rollout):** the remote MCP server (Streamable HTTP) lets users ask from claude.ai / Claude Desktop **only where the org's Anthropic Enterprise agreement + BAA covers that surface** (verified: HIPAA-ready Claude Enterprise exists; consumer/Team plans are not covered — those are refused at auth). This is the same tool registry as Path A behind an OAuth 2.1 resource server.
+**Path B — external Claude clients via MCP (deferred to v2 — resolved Q2, 2026-07-19):** the remote MCP server (Streamable HTTP) lets users ask from claude.ai / Claude Desktop **only where the org's Anthropic Enterprise agreement + BAA covers that surface** (verified: HIPAA-ready Claude Enterprise exists; consumer/Team plans are not covered — those are refused at auth). This is the same tool registry as Path A behind an OAuth 2.1 resource server. Per the resolved scope decision, **v1 ships Path A only**; the tool registry is still built to the MCP tool contract in §6.3 from day one so Path B in v2 is an auth-and-endpoint exercise, not a redesign.
 
 ### 6.3 MCP tool surface
 
@@ -618,7 +618,7 @@ WCAG 2.1 AA throughout: full keyboard operability (desktop), screen-reader label
 | # | Question | Default in this spec | Owner |
 |---|---|---|---|
 | 1 | Entity map: how many legal entities, shared-workforce arrangements, one OHCA/affiliated-covered-entity umbrella or several? | Hard per-entity partitions with explicit cross-entity grants (§3.3) | Compliance + Legal |
-| 2 | Do users need archive Q&A inside claude.ai/Claude Desktop (requires Claude Enterprise + BAA), or is the in-app assistant enough for v1? | In-app assistant first; MCP Path B behind org enablement (§6.2) | Product + IT |
+| 2 | ~~Do users need archive Q&A inside claude.ai/Claude Desktop, or is the in-app assistant enough for v1?~~ **Resolved (2026-07-19): in-app assistant only for v1.** MCP Path B moves to v2, gated on Claude Enterprise + BAA and org enablement (§6.2) | Product + IT ✓ |
 | 3 | Are any recordings part of the designated record set / discoverable clinical documentation? | No (A3); if yes → EHR-export workstream, stricter retention defaults | Compliance |
 | 4 | BYOD mobile allowed? | Managed/MDM-enrolled devices only for capture (§4 row 16) | IT/Security |
 | 5 | Direct Anthropic (BAA+ZDR) vs AWS Bedrock as the Claude path? | Direct Anthropic; Bedrock as the wired contingency (§6.5) | Procurement + Security |
@@ -661,7 +661,7 @@ BAAs executed (AssemblyAI, Anthropic, AWS; Microsoft licensing confirmation); HI
 
 **Phase 2 — Teams module + org depth**
 - Graph callTranscript module: admin wizard, standing subscriptions, VTT alignment, passive enrollment (separate consent), in-room split handling, health dashboard, metered-billing controls
-- MCP server (Path B) for Claude Enterprise clients; anomaly detection on audit stream
+- MCP server (Path B) for Claude Enterprise clients — v2 scope per resolved Q2; anomaly detection on audit stream
 - Cross-entity sharing controls, retention automation maturity (certificates, legal holds UI), admin analytics
 
 **v2+ candidates:** multilingual meetings; redaction tooling (PHI span redaction in transcript/audio); EHR export if Q3 flips; action-item write-back via MCP; room-device hardware kit; offline transcription exploration for air-gapped entities.
