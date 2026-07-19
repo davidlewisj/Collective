@@ -150,7 +150,7 @@ Every meeting is one record with four layers (per-layer access rules in §2.7):
 | **(c) Personal notes** | Each participant-user's own notes, timestamp-linked to the transcript | **Private to their author by default** (Granola model); sharing is explicit (§2.7); multiple users in the same meeting each have their own private notes layer on the same record |
 | **(d) AI outputs** | Auto-generated title, one-paragraph summary, action items (with proposed assignees), generated at meeting end (§2.5) | Regenerable; user-editable; edits tracked |
 
-Plus record-level metadata: calendar linkage, participants (attendees vs. detected speakers), consent artifacts (§2.6.2), entity ownership, sharing state, retention clock, and the full audit trail.
+Plus record-level metadata: calendar linkage, participants (attendees vs. detected speakers), consent artifacts (§2.6.2), entity ownership, sharing state, the facilitator-set **PHI flag** (§6.6), retention clock, and the full audit trail.
 
 ### 2.5 Claude integration (summarized here; full design in §6)
 
@@ -378,6 +378,7 @@ Requirement → design control → responsible component. (HIPAA Security Rule c
 | 16 | Device & media controls — §164.310(d) | Encrypted local stores, keystore-wrapped; remote wipe (MDM-assisted); no PHI in logs/crash reports (scrubbing middleware) | Clients; observability pipeline |
 | 17 | Transmission to AI vendors under minimum necessary | Only transcript text, attributed names, and the requesting author's notes go to Claude; no audio, emails, or other users' notes; ZDR org; HIPAA-eligible endpoints only (no Batch/Files/hosted MCP connector) | Insight service |
 | 18 | PHI boundary for external Claude clients | v1 Claude.ai connector rolls out in the org's HIPAA-ready Claude workspace under the signed Anthropic BAA; OAuth 2.1 + RFC 8707 audience binding; per-user org-IdP tokens; tool results ACL-filtered and audited | MCP server; AuthN/Z |
+| 19 | PHI egress gating when a BAA surface is absent | Facilitator-set "Contains patient info" flag per record (§6.6); BAA registry consulted at every Anthropic-bound egress; flagged meetings excluded from connector results and Claude jobs when the applicable BAA is absent; per-entity default inversion and unanswered-prompt fail-safe; flag changes audit-logged with immediate retroactive effect | Meeting service; MCP server; insight service; admin console |
 
 Explicitly flagged conflicts / non-designs (per working rules):
 
@@ -430,7 +431,7 @@ Justification of the recommendation: the two strong self-hosted models are effec
 
 ### 6.2 On-demand archive reference — two consumption paths
 
-**Path B — Claude.ai chat via custom connector (v1, primary — Q2 as revised 2026-07-19):** users add Collective as a **custom connector** in Claude.ai chat: the remote MCP server (Streamable HTTP) with a per-user OAuth flow (verified: claude.ai custom connectors accept a remote MCP URL and run per-user OAuth; Claude connects from Anthropic's cloud, so the server must be publicly reachable — now a v1 infrastructure requirement). Rollout runs inside the org's **HIPAA-ready Claude workspace under the signed Anthropic BAA** — a vendor fact rather than an app-imposed restriction: Anthropic attaches its BAA to the first-party API and HIPAA-ready Enterprise plans, and consumer/Team claude.ai has no BAA mechanism. Sign-in runs through the org IdP in any case, because the archive is org data and RBAC applies regardless of PHI classification.
+**Path B — Claude.ai chat via custom connector (v1, primary — Q2 as revised 2026-07-19):** users add Collective as a **custom connector** in Claude.ai chat: the remote MCP server (Streamable HTTP) with a per-user OAuth flow (verified: claude.ai custom connectors accept a remote MCP URL and run per-user OAuth; Claude connects from Anthropic's cloud, so the server must be publicly reachable — now a v1 infrastructure requirement). Rollout runs inside the org's **HIPAA-ready Claude workspace under the signed Anthropic BAA** — a vendor fact rather than an app-imposed restriction: Anthropic attaches its BAA to the first-party API and HIPAA-ready Enterprise plans, and consumer/Team claude.ai has no BAA mechanism. Sign-in runs through the org IdP in any case, because the archive is org data and RBAC applies regardless of PHI classification. Where an org (or entity) operates **without** the workspace BAA, the connector still runs in **non-PHI mode**: the per-meeting PHI flag (§6.6) excludes flagged meetings from every connector result while non-flagged meetings stay fetchable.
 
 **Path A — in-app assistant (deferred to v2 — Q2 as revised):** a chat surface inside Collective. The insight service runs the agentic tool loop itself against the **Messages API with tool use** (HIPAA-eligible, verified) — Claude requests `search_meetings(...)`, the backend executes it **in-process with the user's own authorization context**, returns results, Claude answers. Identical tool semantics to the MCP server — one tool implementation, two front doors — so adding it in v2 reuses the v1 tool registry unchanged.
 
@@ -446,6 +447,8 @@ Justification of the recommendation: the two strong self-hosted models are effec
 
 Deliberately absent: any audio access (never exposed via MCP), any cross-user notes access (a caller only ever sees their own notes), any write tools in v1 (action-item status updates are a v2 candidate behind explicit confirmation).
 
+All tools additionally honor the per-meeting PHI flag (§6.6): in orgs without the applicable BAA, flagged meetings never appear in any tool result.
+
 ### 6.4 Authentication & authorization
 
 - The MCP server is an **OAuth 2.1 resource server** per the current MCP spec (verified): RFC 9728 protected-resource metadata for discovery, PKCE, **RFC 8707 resource indicators** so tokens are audience-bound to the server, dynamic client registration disabled in favor of an **allowlisted client set** (org-approved Claude surfaces only).
@@ -457,14 +460,29 @@ Deliberately absent: any audio access (never exposed via MCP), any cross-user no
 
 | Concern | Design response |
 |---|---|
-| BAA | Self-serve Anthropic BAA executed in Claude Console covering the first-party API; org flagged HIPAA-ready (non-eligible features then 400 — a guardrail, not just policy). **v1 prerequisite (revised Q2):** the signed BAA + HIPAA-ready Claude workspace precede the Claude.ai connector rollout. |
+| BAA | Self-serve Anthropic BAA executed in Claude Console covering the first-party API; org flagged HIPAA-ready (non-eligible features then 400 — a guardrail, not just policy). **v1 posture (revised Q2):** the signed BAA + HIPAA-ready Claude workspace precede serving PHI-flagged content through the Claude.ai connector; without them the connector operates in non-PHI mode via the per-meeting flag (§6.6). |
 | Data retention | **Zero-data-retention arrangement** for the API org (verified: arranged via account team; Messages + token counting covered). Note the verified interplay: HIPAA-readiness and ZDR are alternatives — final contracting picks the arrangement, spec default is ZDR-with-BAA. T&S-flagged content may persist up to 2 years even under ZDR (documented residual risk, accepted and recorded in the risk register). |
 | Eligible-feature boundary | **No Batch API, no Files API, no hosted MCP connector, no code execution** in any PHI path (all verified as excluded). Summaries run as plain Messages calls; the in-app assistant runs its own tool loop rather than Anthropic's MCP connector; transcripts are inlined, never uploaded as Files. |
 | Model routing | First-party API only (single BAA + ZDR surface). AWS Bedrock (verified HIPAA-eligible under the AWS BAA) is the contingency path — one config switch, same prompts — if Anthropic terms ever change. Model choice must respect retention rules (verified: some top-tier models require 30-day retention and are ZDR-incompatible — `claude-sonnet-5` has no such constraint). |
 | Minimum necessary | Payload allowlists per job type (§6.1); range-scoped transcript tools (§6.3); no audio, ever; no directory identifiers beyond display names. |
 | Auditability | Every Claude job and every tool call logged with payload manifests (what layers went out), satisfying access-accounting for AI processing. |
 
-**Product-classification note (recorded 2026-07-19).** The sponsor classifies Collective as a general meeting-notes tool not intended to collect PHI. The architecture nevertheless retains its HIPAA safeguards and the signed-BAA posture, for two reasons stated plainly: HIPAA attaches to *content*, not product intent — in a healthcare workplace, meeting speech can mention patients regardless of what the tool is "for" — and the original brief treats compliance as a non-negotiable design constraint. In practice the two positions converge: the sponsor-directed path ("connector with a signed BAA") is precisely this design — BAA signed, connector enabled, safeguards kept as defense-in-depth. Compliance sign-off on the classification itself is tracked as a risk item (§8.2).
+**Product-classification note (recorded 2026-07-19).** The sponsor classifies Collective as a general meeting-notes tool not intended to collect PHI. The architecture nevertheless retains its HIPAA safeguards and the signed-BAA posture, for two reasons stated plainly: HIPAA attaches to *content*, not product intent — in a healthcare workplace, meeting speech can mention patients regardless of what the tool is "for" — and the original brief treats compliance as a non-negotiable design constraint. In practice the two positions converge: the sponsor-directed path ("connector with a signed BAA") is precisely this design — BAA signed, connector enabled, safeguards kept as defense-in-depth, and the per-meeting PHI flag (§6.6) making the boundary operational per record. Compliance sign-off on the classification itself is tracked as a risk item (§8.2).
+
+### 6.6 Per-meeting PHI flag & BAA-aware egress gating (added 2026-07-19)
+
+- **The button:** when capture stops, the facilitator (meeting owner) sees a non-blocking **"Contains patient info?"** chip on the processing/meeting-detail screen (§7.3.3). One tap sets the meeting's **PHI flag**; it remains editable on the record header afterward. Flag changes are audit-logged and take retroactive effect immediately (including search-index visibility, consistent with §2.7 revocation).
+- **What it gates:** the flag is evaluated against the org's **BAA registry** (§2.6.5, admin console) at every Anthropic-bound egress point:
+
+  | Egress | BAA surface required | PHI-flagged meeting when that BAA is absent |
+  |---|---|---|
+  | Claude.ai connector (MCP tools, §6.3) | HIPAA-ready Claude workspace BAA | Meeting excluded from **all** tool results — search hits, fetches, action-item rollups — filtered exactly like an ACL miss |
+  | Post-meeting summarization / v2 in-app assistant (Messages API) | Anthropic API BAA | Claude job skipped; title falls back to a local heuristic (calendar title + roster) with a visible "AI summary unavailable — flagged as patient info" note |
+
+  Non-flagged meetings serve normally through both paths. When the applicable BAAs are in place (the recommended v1 posture, §6.5), the flag imposes no fetch restriction — it remains useful metadata for retention, sharing ceilings, and audit review.
+- **Defaults and fail-safe:** per the sponsor's model, meetings default to **not flagged** (fetchable). Two per-entity policy options harden this where wanted: (a) invert the default for clinical entities (flag on by default, facilitator clears it); (b) an **unanswered-prompt fail-safe** — until the facilitator answers, treat the meeting as flagged for egress purposes. The fail-safe is strongly recommended for any entity operating without a signed BAA, since an unanswered prompt otherwise defaults PHI-bearing content to "fetchable."
+- **Assist, don't rely on memory:** when the summarization pass runs, it cheaply detects likely patient references and surfaces a one-tap suggestion — "This meeting may mention patient info. Flag it?" — rather than auto-flagging. Self-reported flags under-capture; the suggestion narrows that gap (risk register, §8.2).
+- **Floor, not ceiling:** the flag never grants access. RBAC, sharing grants, and the per-layer rules (§2.7) still filter everything either path serves.
 ## 7. UI / UX Design Specification
 
 ### 7.1 Design principles
@@ -566,7 +584,7 @@ Rules: nothing exceeds 300 ms; input is **never** blocked on animation (interrup
 #### 7.3.3 Meeting detail
 
 - **Information hierarchy, top→down:** Title (Fraunces, editable) → one-paragraph **summary** → **action items** (checkboxes, assignee chips, copy-all) → user's **notes** → then the **full transcript** one level down (a tab or a "Transcript" section below the fold), then audio last.
-- **Processing state:** immediately after stop, title/summary/action-item zones render **skeleton shimmer** blocks (1.2 s loop, `mist`→`linen`); the transcript is already present (streaming result) while the polished diarized pass and Claude summary fill in — each section resolves with a 300 ms `ease.decelerate` settle, staggered 80 ms so the page assembles calmly top-down.
+- **Processing state:** immediately after stop, title/summary/action-item zones render **skeleton shimmer** blocks (1.2 s loop, `mist`→`linen`); the transcript is already present (streaming result) while the polished diarized pass and Claude summary fill in — each section resolves with a 300 ms `ease.decelerate` settle, staggered 80 ms so the page assembles calmly top-down. The header shows the one-tap **"Contains patient info?"** chip (§6.6) — answerable in passing, never a blocking modal; it persists on the record header and stays editable.
 - **Transcript view:** speaker-blocked layout — color-chipped name + timestamp (mono) heading a block of turns; utterance hover (desktop) / long-press (mobile) reveals: play from here, copy, correct speaker, redact. Search-in-transcript with match minimap. A horizontal **speaker timeline** strip above the transcript shows who spoke when (per-speaker color bars) and doubles as a scrubber.
 - **Correction flow:** tapping a speaker chip opens "Who said this?" — attendee list first (calendar order, enrolled voices flagged), then "Someone else…". Applying offers scope: *this line / all lines by this voice*. Corrections animate (chip cross-fade) and, when the voice belongs to a consented profile, feed the profile (§2.3).
 - **Audio player:** bottom-docked slim bar; waveform scrubber with speaker-colored segments; playback follows transcript highlighting. Audio access is permission-gated (§2.7) and its presence is hidden entirely for users without the grant.
@@ -640,7 +658,8 @@ WCAG 2.1 AA throughout: full keyboard operability (desktop), screen-reader label
 | **Biometric-statute exposure** (WA RCW 19.375, BIPA copycats; class-action patterns) | High legal severity, low likelihood with controls | Consent-before-profile enforced in pipeline; embeddings-only storage; deletion rights; counsel review of consent text per state; §4 row 12 |
 | **Voice-profile poisoning via bad passive data or malicious corrections** | Medium | Consistency checks + owner confirmation queue (§2.3.3c); profile-hygiene monitoring (§5.2) |
 | **Recording-consent failure in practice** (staff skip the announcement) | Medium | Policy-gated record button, attestation friction kept tiny, tone option, training card at first run; audit sampling by Compliance |
-| **PHI-classification stance** (product treated as a non-PHI notes tool while healthcare meetings may mention patients) | High legal severity if safeguards were ever relaxed on this basis | Safeguards and BAAs retained regardless (§6.5 classification note); obtain Compliance sign-off on the classification; revisit if meeting content proves PHI-dense in pilot |
+| **PHI-classification stance** (product treated as a non-PHI notes tool while healthcare meetings may mention patients) | High legal severity if safeguards were ever relaxed on this basis | Safeguards and BAAs retained regardless (§6.5 classification note); per-meeting PHI flag with AI-assisted suggestion and fail-safe options (§6.6); obtain Compliance sign-off on the classification; revisit if meeting content proves PHI-dense in pilot |
+| **PHI flag under-capture** (facilitator forgets or misjudges; flagged model is self-reported) | Medium–high in a no-BAA entity (flag is the only egress gate there) | AI-assisted flag suggestion at summarization; per-entity default inversion; unanswered-prompt fail-safe recommended wherever a BAA surface is missing (§6.6); audit sampling of unflagged meetings |
 | **Cost surprises** (streaming billed by session duration; Graph metering) | Low | Session lifecycle management (close on stop), spend dashboards, per-entity budgets |
 | **Electron footprint on low-end front-desk hardware** | Low | Perf budget in CI; Tauri hedge (§2.7.1) |
 
@@ -660,7 +679,8 @@ BAAs executed (AssemblyAI, Anthropic, AWS; Microsoft licensing confirmation); HI
 **Phase 1.5 — Mobile + voice profiles**
 - iOS/Android in-person capture (foreground-service/background-audio, interruption UX), notes, playback
 - Speaker-ID service (ECAPA vs TitaNet bake-off), active enrollment ceremony, matching in all modes, unknown-speaker flow, biometric consent + deletion self-service
-- MCP server + Claude.ai custom connector (Path B) over the archive tools — v1 per revised Q2; signed Anthropic BAA + HIPAA-ready Claude workspace are Phase 0 prerequisites
+- MCP server + Claude.ai custom connector (Path B) over the archive tools — v1 per revised Q2; signed Anthropic BAA + HIPAA-ready Claude workspace are Phase 0 prerequisites for serving PHI-flagged content (non-PHI mode via the §6.6 flag otherwise)
+- Per-meeting PHI flag: end-of-capture chip, BAA-aware egress gating, AI-assisted flag suggestion, per-entity defaults (§6.6)
 
 **Phase 2 — Teams module + org depth**
 - Graph callTranscript module: admin wizard, standing subscriptions, VTT alignment, passive enrollment (separate consent), in-room split handling, health dashboard, metered-billing controls
