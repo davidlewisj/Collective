@@ -1065,3 +1065,13 @@
   outline: 2px solid var(--c-juniper);
   outline-offset: 2px;
 }
+
+.connector-snippet {
+  font: var(--type-mono-sm);
+  color: var(--c-ink);
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-mist);
+  border-radius: var(--radius-card);
+  padding: var(--space-3);
+  white-space: pre;
+}

@@ -27,6 +27,18 @@ export interface Session {
   deviceId?: string;
 }
 
+export interface UserSettings {
+  /** Secret ICS feed URL (Outlook "publish calendar" / Google "secret address"). */
+  calendarIcsUrl?: string;
+}
+
+/** Long-lived token for the Claude connector (MCP surface ONLY, revocable). */
+export interface ConnectorToken {
+  token: string;
+  userId: string;
+  createdAt: string;
+}
+
 export interface Db {
   users: Map<string, User>;
   meetings: Map<string, Meeting>;
@@ -34,6 +46,8 @@ export interface Db {
   notes: Map<string, Note>; // `${meetingId}:${userId}`
   shares: Map<string, ShareGrant>;
   sessions: Map<string, Session>;
+  userSettings: Map<string, UserSettings>;
+  connectorTokens: Map<string, ConnectorToken>;
   baa: BaaRegistry;
   consentPolicy: ConsentPolicy;
   retention: RetentionPolicy;
@@ -55,6 +69,8 @@ export function createDb(): Db {
     notes: new Map(),
     shares: new Map(),
     sessions: new Map(),
+    userSettings: new Map(),
+    connectorTokens: new Map(),
     baa: { assemblyai: false, awsBedrock: false, claudeWorkspace: false, microsoft: false },
     // WA-strict default (Q6): attestation mandatory before capture starts.
     consentPolicy: {

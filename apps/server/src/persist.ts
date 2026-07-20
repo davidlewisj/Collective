@@ -28,7 +28,7 @@ import {
   ShareGrant,
   Utterance,
 } from "@collective/shared";
-import { Db } from "./store.js";
+import { ConnectorToken, Db, UserSettings } from "./store.js";
 
 /* ------------------------------ audio store ---------------------------- */
 
@@ -87,7 +87,7 @@ export class DiskAudioStore implements AudioStore {
 /* ----------------------------- state snapshot --------------------------- */
 
 interface Snapshot {
-  version: 1;
+  version: 1 | 2;
   meetings: Meeting[];
   utterances: Array<[string, Utterance[]]>;
   notes: Array<[string, Note]>;
@@ -96,6 +96,9 @@ interface Snapshot {
   consentPolicy: ConsentPolicy;
   retention: RetentionPolicy;
   idleMinutes: number;
+  /** v2 additions; absent in v1 snapshots. */
+  userSettings?: Array<[string, UserSettings]>;
+  connectorTokens?: ConnectorToken[];
 }
 
 export class StateSnapshotStore {
@@ -121,13 +124,15 @@ export class StateSnapshotStore {
     this.db.consentPolicy = snap.consentPolicy;
     this.db.retention = snap.retention;
     this.db.idleMinutes = snap.idleMinutes;
+    this.db.userSettings = new Map(snap.userSettings ?? []);
+    this.db.connectorTokens = new Map((snap.connectorTokens ?? []).map((t) => [t.token, t]));
     return true;
   }
 
   /** Atomic write: temp file + rename, so a crash never truncates state. */
   save(): void {
     const snap: Snapshot = {
-      version: 1,
+      version: 2,
       meetings: [...this.db.meetings.values()],
       utterances: [...this.db.utterances.entries()],
       notes: [...this.db.notes.entries()],
@@ -136,6 +141,8 @@ export class StateSnapshotStore {
       consentPolicy: this.db.consentPolicy,
       retention: this.db.retention,
       idleMinutes: this.db.idleMinutes,
+      userSettings: [...this.db.userSettings.entries()],
+      connectorTokens: [...this.db.connectorTokens.values()],
     };
     writeFileSync(this.tmp, JSON.stringify(snap));
     renameSync(this.tmp, this.file);

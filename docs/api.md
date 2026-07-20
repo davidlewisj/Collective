@@ -30,6 +30,9 @@ Every content read is audit-logged server-side. All list/detail responses are AC
 | POST `/memos` | `{dataBase64}` → `{text}` | Voice memo via Sync path (≤120 s) |
 | GET `/search` | `?q=` → `{hits}` | `{meetingId, title, snippet, layer}`; ACL + revocation aware |
 | GET `/audit` | `?meetingId=&actor=` → `{events}` | `compliance_auditor`/`org_admin` only |
+| GET `/me/settings` · PUT same | `{calendarIcsUrl}` → `{settings}` | Per-user; ICS feed powers calendar naming on untitled captures |
+| GET `/me/calendar-preview` | → `{event}` or 404 | Settings "Test": what a capture started now would be named |
+| GET/POST/DELETE `/me/connector-token` | POST → `{token}` (shown once, `mcp_…`) | Long-lived Claude connector token; authenticates **`/mcp` only**; mint replaces, delete revokes |
 | GET `/admin/baa-registry` · PUT same | body `{assemblyai, awsBedrock, claudeWorkspace, microsoft}` → response `{baa}` | org_admin; drives §6.6 gating |
 | GET `/admin/consent-policy` · PUT same | body `{requiredMechanisms, phiFailSafe}` → response `{policy}` | org_admin |
 | GET `/admin/retention` · PUT same | body `{audioDays, transcriptDays, auditDays}` → response `{retention}` | org_admin |

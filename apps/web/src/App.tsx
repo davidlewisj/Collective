@@ -6,6 +6,7 @@ import { MeetingListPage } from "./pages/MeetingList";
 import { CapturePage } from "./pages/Capture";
 import { MeetingDetailPage } from "./pages/MeetingDetail";
 import { AdminPage } from "./pages/Admin";
+import { SettingsPage } from "./pages/Settings";
 
 /**
  * Last-resort error boundary: a render crash on one screen must never blank
@@ -80,6 +81,14 @@ function AppRoutes() {
           element={
             <RequireAuth>
               <AdminPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <RequireAuth>
+              <SettingsPage />
             </RequireAuth>
           }
         />

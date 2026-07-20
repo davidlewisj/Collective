@@ -33,6 +33,7 @@ import { Db, newId, userByEmail } from "./store.js";
 import { Insight } from "./adapters/insight.js";
 import { Transcriber } from "./adapters/transcriber.js";
 import { AudioStore, MemoryAudioStore } from "./persist.js";
+import { IcsFetcher, currentCalendarEvent, httpIcsFetcher } from "./calendar.js";
 import { StreamingRelay, UpstreamFactory } from "./relay.js";
 import { registerMcp } from "./mcp.js";
 
@@ -45,6 +46,8 @@ export interface AppDeps {
   audioStore?: AudioStore;
   /** Live-caption vendor socket factory (relay.ts); null/absent = no live vendor captions. */
   upstreamFactory?: UpstreamFactory | null;
+  /** ICS feed fetcher (calendar.ts); injectable for tests. */
+  icsFetcher?: IcsFetcher;
 }
 
 declare module "fastify" {
@@ -121,6 +124,20 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     // stream route (and only it) may pass the bearer token as ?token=.
     const wsToken = path.endsWith("/stream") ? ((req.query as { token?: string }).token ?? "") : "";
     const token = (req.headers.authorization ?? "").replace(/^Bearer /, "") || wsToken;
+
+    // Long-lived connector tokens authenticate the MCP surface ONLY (the
+    // Claude connector can't re-login every 15 idle minutes); they carry no
+    // access to any other route and are revocable in Settings.
+    if (path === "/mcp") {
+      const ct = db.connectorTokens.get(token);
+      if (ct) {
+        const user = db.users.get(ct.userId);
+        if (!user || user.deactivated) return fail(reply, 401, "unauthenticated");
+        req.user = user;
+        return;
+      }
+    }
+
     const session = db.sessions.get(token);
     if (!session) return fail(reply, 401, "unauthenticated");
     const idleMs = db.idleMinutes * 60 * 1000;
@@ -136,6 +153,57 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
   app.get("/health", async () => ({ ok: true }));
   app.get("/me", async (req) => ({ user: req.user }));
+
+  /* --------------------------- user settings --------------------------- */
+
+  app.get("/me/settings", async (req) => ({
+    settings: db.userSettings.get(req.user.id) ?? {},
+  }));
+
+  app.put("/me/settings", async (req) => {
+    const body = z
+      .object({ calendarIcsUrl: z.string().url().max(2000).or(z.literal("")) })
+      .parse(req.body);
+    const settings = { ...db.userSettings.get(req.user.id) };
+    settings.calendarIcsUrl = body.calendarIcsUrl || undefined;
+    db.userSettings.set(req.user.id, settings);
+    audit.emit({
+      actorUserId: req.user.id,
+      action: "settings.calendar_updated",
+      detail: body.calendarIcsUrl ? "ICS feed set" : "ICS feed cleared",
+    });
+    return { settings };
+  });
+
+  app.get("/me/calendar-preview", async (req, reply) => {
+    // Settings "test" button: what would a capture started now be called?
+    const icsUrl = db.userSettings.get(req.user.id)?.calendarIcsUrl;
+    if (!icsUrl) return fail(reply, 404, "no calendar configured");
+    const event = await currentCalendarEvent(icsUrl, icsFetcher);
+    return { event: event ? { title: event.summary, attendeeEmails: event.attendeeEmails } : null };
+  });
+
+  /* ---------------------- Claude connector tokens ---------------------- */
+
+  app.get("/me/connector-token", async (req) => {
+    const existing = [...db.connectorTokens.values()].find((t) => t.userId === req.user.id);
+    return { exists: !!existing, createdAt: existing?.createdAt ?? null };
+  });
+
+  app.post("/me/connector-token", async (req) => {
+    // One active token per user; minting replaces (and so revokes) the old one.
+    for (const [k, t] of db.connectorTokens) if (t.userId === req.user.id) db.connectorTokens.delete(k);
+    const token = `mcp_${randomBytes(24).toString("hex")}`;
+    db.connectorTokens.set(token, { token, userId: req.user.id, createdAt: new Date().toISOString() });
+    audit.emit({ actorUserId: req.user.id, action: "connector_token.minted" });
+    return { token }; // shown once; only its existence is retrievable later
+  });
+
+  app.delete("/me/connector-token", async (req) => {
+    for (const [k, t] of db.connectorTokens) if (t.userId === req.user.id) db.connectorTokens.delete(k);
+    audit.emit({ actorUserId: req.user.id, action: "connector_token.revoked" });
+    return { ok: true };
+  });
   app.get("/users", async () => ({
     users: [...db.users.values()].map(({ id, displayName, role, speakerHue }) => ({ id, displayName, role, speakerHue })),
   }));
@@ -155,6 +223,8 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       .map((m) => ({ ...m, myLayers: readableLayers(db, req.user, m) }));
     return { meetings };
   });
+
+  const icsFetcher = deps.icsFetcher ?? httpIcsFetcher;
 
   app.post("/meetings", async (req) => {
     const body = z
@@ -177,6 +247,31 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       audioChunks: 0,
       createdAt: new Date().toISOString(),
     };
+
+    // Calendar naming (AT-3 ICS slice): untitled meetings pick up the current
+    // calendar event's name, plus attendees whose emails match the directory.
+    // Any calendar failure silently yields an untitled meeting.
+    const icsUrl = db.userSettings.get(req.user.id)?.calendarIcsUrl;
+    if (!meeting.title && icsUrl) {
+      const event = await currentCalendarEvent(icsUrl, icsFetcher);
+      if (event) {
+        meeting.title = event.summary.slice(0, 200);
+        meeting.namedFromCalendar = true;
+        for (const email of event.attendeeEmails) {
+          const u = userByEmail(db, email);
+          if (u && u.id !== req.user.id && !meeting.attendeeUserIds.includes(u.id)) {
+            meeting.attendeeUserIds.push(u.id);
+          }
+        }
+        audit.emit({
+          actorUserId: req.user.id,
+          action: "meeting.named_from_calendar",
+          meetingId: meeting.id,
+          detail: `"${meeting.title}" +${event.attendeeEmails.length} attendee email(s)`,
+        });
+      }
+    }
+
     db.meetings.set(meeting.id, meeting);
     audit.emit({ actorUserId: req.user.id, action: "meeting.create", meetingId: meeting.id });
     return { meeting };

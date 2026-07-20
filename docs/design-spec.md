@@ -648,6 +648,13 @@ WCAG 2.1 AA throughout: full keyboard operability (desktop), screen-reader label
 
 All seven open questions are now resolved (as of 2026-07-19); the table is retained as the decision record.
 
+Post-resolution decisions (same record, later dates):
+
+| # | Decision | Date | Detail |
+|---|---|---|---|
+| D8 | **Connector-first AI**: backend Claude summarization is optional (local heuristic titles by default; Bedrock stays as an env-gated option). On-demand summaries/Q&A run through the Collective MCP connector in the user's Claude — long-lived, revocable, MCP-scoped connector tokens + an in-app "Connect Claude" card (Claude Desktop via `mcp-remote` for local deployments; claude.ai once the server is publicly deployed). §6.6 PHI gating unchanged. | 2026-07-20 | Sponsor decision; supersedes the assumption that every meeting needs a backend summary job |
+| D9 | **Calendar naming via per-user secret ICS feed**: untitled captures are named from the calendar event covering "now" (10-min pre-start grace), attendees pre-filled by email↔directory match; calendar failures never block capture. Full Microsoft Graph calendar OAuth remains the production path (AT-3). | 2026-07-20 | Sponsor request; pragmatic slice of AT-3 |
+
 ### 8.2 Risks
 
 | Risk | Severity | Mitigation |
