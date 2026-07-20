@@ -87,3 +87,33 @@ export function userByEmail(db: Db, email: string): User | undefined {
   for (const u of db.users.values()) if (u.email === email) return u;
   return undefined;
 }
+
+/**
+ * Environment-driven policy seeds, so a .env file survives restarts of the
+ * in-memory dev store (persistence proper is backlog PF-3):
+ * - COLLECTIVE_BAA: comma list of registry entries to mark executed
+ *   (assemblyai, awsBedrock, claudeWorkspace, microsoft). Only set these
+ *   after the corresponding BAA is actually signed (docs/procurement-baa-runbook.md).
+ * - COLLECTIVE_PHI_FAILSAFE=0: treat unanswered PHI flags as non-PHI
+ *   (sponsor model); default stays fail-safe.
+ */
+export function applyEnvOverrides(db: Db, env: NodeJS.ProcessEnv = process.env): string[] {
+  const applied: string[] = [];
+  const keys = new Set(
+    (env.COLLECTIVE_BAA ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+  for (const k of ["assemblyai", "awsBedrock", "claudeWorkspace", "microsoft"] as const) {
+    if (keys.has(k)) {
+      db.baa[k] = true;
+      applied.push(`baa.${k}=true`);
+    }
+  }
+  if (env.COLLECTIVE_PHI_FAILSAFE === "0") {
+    db.consentPolicy.phiFailSafe = false;
+    applied.push("phiFailSafe=false");
+  }
+  return applied;
+}

@@ -4,10 +4,12 @@ import { buildApp } from "./http.js";
 import { makeInsight } from "./adapters/insight.js";
 import { makeTranscriber } from "./adapters/transcriber.js";
 import { startRetentionWorker } from "./retention.js";
-import { createDb, seedUsers } from "./store.js";
+import { applyEnvOverrides, createDb, seedUsers } from "./store.js";
 
 const db = createDb();
 seedUsers(db);
+const overrides = applyEnvOverrides(db);
+if (overrides.length) console.log(`env overrides: ${overrides.join(", ")}`);
 const audit = new AuditLog();
 const transcriber = makeTranscriber();
 const insight = makeInsight();
