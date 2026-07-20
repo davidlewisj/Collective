@@ -42,10 +42,10 @@ Derived from [design-spec.md](design-spec.md) §8.3. Every story traces to a spe
 
 | ID | Story | Acceptance criteria | Size | Deps | Spec |
 |---|---|---|---|---|---|
-| CP-1 | Execute AssemblyAI BAA | Paid account; BAA signed; **Streaming + Sync endpoints enumerated in the executed agreement**; transcript TTL set to 1 h; training opt-out confirmed | S | — | §2.2, §2.6.5 |
-| CP-2 | Execute AWS BAA & service allowlist | BAA via AWS Artifact; engineering allowlist of HIPAA-eligible services (incl. Bedrock) enforced via SCP; Bedrock invocation logging confirmed **off** | S | — | §2.6.5, §6.5 |
-| CP-3 | Confirm Microsoft BAA coverage | Org's Product Terms/DPA reviewed; Graph/M365 in-scope confirmation filed in BAA registry | S | — | §2.6.5 |
-| CP-4 | Anthropic workspace decision record | Decision documented: HIPAA-ready Claude workspace BAA timing for the Phase 1.5 connector (or §6.6 non-PHI mode at launch) | S | — | §6.2, §6.5 |
+| CP-1 | Execute AssemblyAI BAA — **kicked off:** [issue #6](https://github.com/davidlewisj/Collective/issues/6), [runbook §1](procurement-baa-runbook.md) | Paid account; BAA signed; **Streaming + Sync endpoints enumerated in the executed agreement**; transcript TTL set to 1 h; training opt-out confirmed | S | — | §2.2, §2.6.5 |
+| CP-2 | Execute AWS BAA & service allowlist — **kicked off:** [issue #7](https://github.com/davidlewisj/Collective/issues/7), [runbook §2](procurement-baa-runbook.md) | BAA via AWS Artifact; engineering allowlist of HIPAA-eligible services (incl. Bedrock) enforced via SCP; Bedrock invocation logging confirmed **off** | S | — | §2.6.5, §6.5 |
+| CP-3 | Confirm Microsoft BAA coverage — **kicked off:** [issue #9](https://github.com/davidlewisj/Collective/issues/9), [runbook §3](procurement-baa-runbook.md) | Org's Product Terms/DPA reviewed; Graph/M365 in-scope confirmation filed in BAA registry | S | — | §2.6.5 |
+| CP-4 | Anthropic workspace decision record — **kicked off:** [issue #8](https://github.com/davidlewisj/Collective/issues/8), [runbook §4](procurement-baa-runbook.md) | Decision documented: HIPAA-ready Claude workspace BAA timing for the Phase 1.5 connector (or §6.6 non-PHI mode at launch) | S | — | §6.2, §6.5 |
 | CP-5 | HIPAA risk analysis (§164.308(a)(1)) | Risk analysis covering the §4 matrix; findings tracked; sign-off by security officer | M | CP-1..3 | §4 |
 | CP-6 | Consent copy with counsel | Recording-consent scripts/disclosures (WA-strict, §2.6.2) and biometric consent text (§2.6.3, held for Phase 1.5) approved by counsel; versioned in repo | M | — | §2.6.2–3 |
 | CP-7 | BAA registry (admin console seed) | Registry data model + minimal UI: vendor, surface, execution date, renewal, evidence link; feeds §6.6 gating later | S | PF-4 | §2.6.5 |
