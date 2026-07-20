@@ -30,6 +30,11 @@ export function insightEgressAllowed(db: Db, meeting: Meeting): boolean {
   return !phiEffective(db, meeting) || db.baa.awsBedrock;
 }
 
+/** May this meeting's AUDIO be sent to AssemblyAI for transcription? */
+export function transcriptionEgressAllowed(db: Db, meeting: Meeting): boolean {
+  return !phiEffective(db, meeting) || db.baa.assemblyai;
+}
+
 /** May this meeting appear in Claude.ai connector (MCP) results? */
 export function mcpEgressAllowed(db: Db, meeting: Meeting): boolean {
   return !phiEffective(db, meeting) || db.baa.claudeWorkspace;

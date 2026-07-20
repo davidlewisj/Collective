@@ -8,7 +8,7 @@ import { attribute } from "./attribution.js";
 import { AuditLog } from "./audit.js";
 import { Insight, MockInsight } from "./adapters/insight.js";
 import { MockTranscriber, Transcriber } from "./adapters/transcriber.js";
-import { insightEgressAllowed } from "./policy.js";
+import { insightEgressAllowed, transcriptionEgressAllowed } from "./policy.js";
 import { Db } from "./store.js";
 
 type SseSink = (event: string, data: unknown) => void;
@@ -58,6 +58,32 @@ export async function runPostMeetingPipeline(deps: PipelineDeps, meeting: Meetin
   hub.emit(meeting.id, "status", { status: "processing" });
 
   try {
+    // §6.6 / CP-1 invariant: audio goes to a REAL transcription vendor only
+    // when permitted — PHI-effective meetings need the AssemblyAI BAA on the
+    // registry. The mock engine is local, so no gate applies to it. Audio is
+    // preserved; flip the registry and POST /meetings/:id/reprocess.
+    if (deps.transcriber.name !== "mock" && !transcriptionEgressAllowed(db, meeting)) {
+      audit.emit({
+        actorUserId: actor.id,
+        action: "transcription.skipped_phi_gate",
+        meetingId: meeting.id,
+        detail: "PHI-flagged (or fail-safe) and no AssemblyAI BAA in the registry",
+      });
+      db.utterances.set(meeting.id, []);
+      meeting.ai = {
+        title: meeting.title || `Meeting ${new Date().toLocaleDateString("en-US")}`,
+        summary: "",
+        actionItems: [],
+        model: "none",
+        generatedAt: new Date().toISOString(),
+        skippedReason:
+          "Transcript unavailable — flagged as patient info and no AssemblyAI BAA on file. Audio is preserved; an admin can record the BAA in Admin → BAA registry, then reprocess this meeting.",
+      };
+      meeting.status = "ready";
+      hub.emit(meeting.id, "status", { status: "ready", degraded: true });
+      return;
+    }
+
     const attendeeCount = meeting.attendeeUserIds.length + 1;
     const raw = await deps.transcriber.transcribe(meeting, deps.audioFor(meeting.id), {
       speakersExpected: Math.min(Math.max(attendeeCount, 2), 10),

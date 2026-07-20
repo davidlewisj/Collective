@@ -249,7 +249,9 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     });
     const sink = (event: string, data: unknown) =>
       reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-    sink("status", { status: m.status });
+    // liveCaptions: real vendors transcribe after the meeting (the streaming
+    // relay is backlog IN-2); only the mock engine captions live today.
+    sink("status", { status: m.status, liveCaptions: deps.transcriber.name === "mock" });
     const unsub = hub.subscribe(m.id, sink);
     req.raw.on("close", unsub);
     return reply; // stream held open
@@ -260,6 +262,18 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     if (m.ownerUserId !== req.user.id) return fail(reply, 403, "owner only");
     if (m.status !== "recording") return fail(reply, 409, "not recording");
     audit.emit({ actorUserId: req.user.id, action: "capture.stop", meetingId: m.id });
+    void runPostMeetingPipeline(pipeline, m, req.user);
+    return { meeting: m };
+  });
+
+  app.post("/meetings/:id/reprocess", async (req, reply) => {
+    // Re-run transcription + insight from preserved audio — e.g. after the
+    // BAA registry changes or a vendor outage (§6.6; backlog SUM-4).
+    const m = getMeeting(req, reply, (req.params as { id: string }).id);
+    if (m.ownerUserId !== req.user.id) return fail(reply, 403, "owner only");
+    if (m.status !== "ready") return fail(reply, 409, "not reprocessable");
+    if (m.audioChunks === 0) return fail(reply, 409, "no preserved audio");
+    audit.emit({ actorUserId: req.user.id, action: "pipeline.reprocess", meetingId: m.id });
     void runPostMeetingPipeline(pipeline, m, req.user);
     return { meeting: m };
   });
