@@ -6,8 +6,11 @@
  */
 import Fastify, { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import websocket from "@fastify/websocket";
+import fastifyStatic from "@fastify/static";
 import type WebSocket from "ws";
 import { randomBytes } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { z } from "zod";
 import {
   ConsentMechanism,
@@ -56,6 +59,12 @@ export interface AppDeps {
   oauth?: OAuthProvider | null;
   /** Where the web app lives, for post-sign-in redirects. */
   webOrigin?: string;
+  /**
+   * Built web app directory (apps/web/dist). When set, the server also serves
+   * the SPA + its assets so the whole app runs on one origin behind one HTTPS
+   * URL — the deploy topology (docs/deploy.md). Unset in dev/tests.
+   */
+  webDir?: string;
 }
 
 declare module "fastify" {
@@ -73,6 +82,17 @@ function fail(reply: FastifyReply, code: number, error: string): never {
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
+// API surface that requires a bearer. Everything else on the origin — the web
+// app's static assets and its client-side routes (/, /login, /connect, /admin,
+// …) — is served without auth so the app can run single-origin (docs/deploy.md).
+// "/admin" alone is the SPA page; the admin API lives under "/admin/…".
+const PROTECTED_PREFIXES = ["/users", "/meetings", "/search", "/audit", "/memos", "/shares", "/mcp", "/me"];
+function routeNeedsAuth(path: string): boolean {
+  if (path === "/oauth/authorize/decision") return true;
+  if (path.startsWith("/admin/")) return true;
+  return PROTECTED_PREFIXES.some((p) => path === p || path.startsWith(p + "/"));
 }
 
 export function buildApp(deps: AppDeps): FastifyInstance {
@@ -302,6 +322,8 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   app.addHook("preHandler", async (req: FastifyRequest, reply: FastifyReply) => {
     const path = req.url.split("?")[0]!;
     if (PUBLIC.has(path)) return;
+    // Web assets and SPA routes (served in single-origin mode) carry no auth.
+    if (!routeNeedsAuth(path)) return;
     // Browser WebSockets cannot send an Authorization header, so the live
     // stream route (and only it) may pass the bearer token as ?token=.
     const wsToken = path.endsWith("/stream") ? ((req.query as { token?: string }).token ?? "") : "";
@@ -903,5 +925,25 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   });
 
   registerMcp(app, deps);
+
+  // Single-origin serving (deploy topology): the API above plus the built web
+  // app on the same host, so one HTTPS URL covers the UI, the API, MCP, and
+  // the OAuth consent flow — no cross-origin CORS, and the OAuth redirect
+  // lands back on the same origin. Dev/tests leave webDir unset and run the
+  // web app from Vite instead.
+  if (deps.webDir && existsSync(join(deps.webDir, "index.html"))) {
+    const webDir = deps.webDir;
+    const indexHtml = readFileSync(join(webDir, "index.html"), "utf8");
+    void app.register(fastifyStatic, { root: webDir, wildcard: false });
+    // Client-side routes have no file on disk; serve the SPA shell for browser
+    // navigations (Accept: text/html). Everything else 404s as JSON.
+    app.setNotFoundHandler((req, reply) => {
+      if (req.method === "GET" && String(req.headers.accept ?? "").includes("text/html")) {
+        return reply.type("text/html").send(indexHtml);
+      }
+      return reply.code(404).send({ error: "not found" });
+    });
+  }
+
   return app;
 }

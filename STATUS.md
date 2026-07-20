@@ -43,6 +43,7 @@ Honest, story-level map of what exists in this repository versus the design spec
 | Insight — Claude on Bedrock (`anthropic.claude-sonnet-5`, assignee validation, minimum-necessary payload) | §6.1, §6.5 | 🔶 adapter written; needs AWS account under BAA |
 | MCP server (5 tools, per-caller ACL, PHI gating, audit) | §6.2–6.4 | ✅ verified live over Streamable HTTP |
 | MCP OAuth 2.1 front: RFC 9728 + RFC 8414 discovery, authorization-code + PKCE (S256), RFC 8707 audience-bound tokens, refresh, allowlisted admin-minted clients (no open DCR), browser consent page, per-tool scopes | §6.4 | ✅ full flow tested (discovery, authorize→consent→token, refresh/rotation, PKCE/secret/audience/redirect deny paths, client revoke, 401+`WWW-Authenticate`) — 🔶 claude.ai end-to-end needs a public HTTPS deploy (`COLLECTIVE_PUBLIC_URL`) since Claude connects from Anthropic's cloud |
+| Single-origin serving + container for a public **staging** deploy (server serves the built web app; `Dockerfile` + `docs/deploy.md`; Render/Fly/VPS) — the HTTPS endpoint that lets claude.ai + Microsoft OAuth run end-to-end | deploy | ✅ built + tested (SPA + API + OAuth on one origin, auth gate holds) — ⚕ **staging/no-PHI only**; production PHI still requires the BAA-covered AWS landing zone (PF‑1..3) |
 | Search with query-time ACL + instant revocation | §3.3 | ✅ tested |
 
 ## Clients
