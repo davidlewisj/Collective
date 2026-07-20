@@ -10,3 +10,4 @@ coverage/
 !.env.example
 .DS_Store
 apps/desktop/out/
+apps/desktop/web/
