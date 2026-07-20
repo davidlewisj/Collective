@@ -1,3 +1,4 @@
+import "./env.js"; // .env auto-loading — must be first so adapters see the values
 import { AuditLog } from "./audit.js";
 import { buildApp } from "./http.js";
 import { makeInsight } from "./adapters/insight.js";
