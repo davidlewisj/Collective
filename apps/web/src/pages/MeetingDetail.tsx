@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import type { ActionItem, Meeting, ShareGrant, ShareLayer, User, Utterance } from "@collective/shared";
 import {
   correctSpeaker,
-  fetchAudio,
+  fetchAudioBlob,
   getMeeting,
   getTranscript,
   patchMeetingTitle,
@@ -348,32 +348,117 @@ function TranscriptSection({
   );
 }
 
-/* ------------------------------ audio stub ------------------------------ */
+/* ------------------------------ audio player ----------------------------- */
 
-function AudioStub({ meetingId, durationMs }: { meetingId: string; durationMs: number }) {
+function AudioPlayer({ meetingId, durationMs }: { meetingId: string; durationMs: number }) {
   const [playing, setPlaying] = useState(false);
   const [denied, setDenied] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+  const [positionMs, setPositionMs] = useState(0);
+  const [totalMs, setTotalMs] = useState(durationMs);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const urlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      audioRef.current?.pause();
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+    };
+  }, []);
+
+  const ensureAudio = async (): Promise<HTMLAudioElement | null> => {
+    if (audioRef.current) return audioRef.current;
+    setLoading(true);
+    try {
+      const blob = await fetchAudioBlob(meetingId); // every fetch is audited server-side
+      if (!blob) {
+        setDenied(true);
+        return null;
+      }
+      const url = URL.createObjectURL(blob);
+      urlRef.current = url;
+      const el = new Audio(url);
+      // MediaRecorder webm carries no duration metadata (reports Infinity);
+      // seeking far ahead once forces the browser to compute the real length.
+      el.addEventListener("loadedmetadata", () => {
+        if (!Number.isFinite(el.duration)) {
+          const settle = () => {
+            el.removeEventListener("timeupdate", settle);
+            el.currentTime = 0;
+            if (Number.isFinite(el.duration)) setTotalMs(el.duration * 1000);
+          };
+          el.addEventListener("timeupdate", settle);
+          el.currentTime = Number.MAX_SAFE_INTEGER;
+        } else {
+          setTotalMs(el.duration * 1000);
+        }
+      });
+      el.addEventListener("timeupdate", () => setPositionMs(el.currentTime * 1000));
+      el.addEventListener("ended", () => setPlaying(false));
+      el.addEventListener("error", () => {
+        setError(true);
+        setPlaying(false);
+      });
+      audioRef.current = el;
+      return el;
+    } catch {
+      setError(true);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const toggle = async () => {
     if (playing) {
+      audioRef.current?.pause();
       setPlaying(false);
       return;
     }
-    const ok = await fetchAudio(meetingId); // access itself is audited server-side
-    if (ok) setPlaying(true);
-    else setDenied(true);
+    const el = await ensureAudio();
+    if (!el) return;
+    try {
+      await el.play();
+      setPlaying(true);
+    } catch {
+      setError(true);
+    }
+  };
+
+  const seek = async (e: { currentTarget: HTMLElement; clientX: number }) => {
+    const el = await ensureAudio();
+    if (!el || !Number.isFinite(el.duration)) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const frac = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
+    el.currentTime = frac * el.duration;
+    setPositionMs(el.currentTime * 1000);
   };
 
   if (denied) return <p className="detail-muted">Audio isn't available to you for this meeting.</p>;
+  if (error) return <p className="detail-muted">This recording can't be played back right now.</p>;
+
+  const pct = totalMs > 0 ? Math.min((positionMs / totalMs) * 100, 100) : 0;
   return (
     <div className="audio-bar">
-      <button type="button" className="btn-mini" onClick={() => void toggle()}>
-        {playing ? "Pause audio" : "Play audio"}
+      <button type="button" className="btn-mini" onClick={() => void toggle()} disabled={loading}>
+        {loading ? "Loading…" : playing ? "Pause audio" : "Play audio"}
       </button>
-      <span className="audio-track" aria-hidden="true">
-        <span className={`audio-progress${playing ? " audio-progress-live" : ""}`} />
+      <span
+        className="audio-track audio-track-seek"
+        role="slider"
+        aria-label="Seek"
+        aria-valuemin={0}
+        aria-valuemax={Math.round(totalMs / 1000)}
+        aria-valuenow={Math.round(positionMs / 1000)}
+        tabIndex={0}
+        onClick={(e) => void seek(e)}
+      >
+        <span className="audio-progress" style={{ width: `${pct}%` }} />
       </span>
-      <span className="mono">{fmtClock(durationMs)}</span>
+      <span className="mono">
+        {fmtClock(positionMs)} / {fmtClock(totalMs)}
+      </span>
     </div>
   );
 }
@@ -575,7 +660,7 @@ export function MeetingDetailPage() {
       {myLayers.includes("audio") && (
         <section className="detail-section">
           <h2 className="section-heading">Audio</h2>
-          <AudioStub meetingId={meeting.id} durationMs={durationMs} />
+          <AudioPlayer meetingId={meeting.id} durationMs={durationMs} />
         </section>
       )}
 

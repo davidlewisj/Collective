@@ -1057,3 +1057,11 @@
   justify-content: center;
   gap: var(--space-3);
 }
+
+.audio-track-seek {
+  cursor: pointer;
+}
+.audio-track-seek:focus-visible {
+  outline: 2px solid var(--c-juniper);
+  outline-offset: 2px;
+}
