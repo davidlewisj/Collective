@@ -1,0 +1,15 @@
+{
+  "name": "@collective/tokens",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./tokens.json",
+  "exports": {
+    ".": "./tokens.json",
+    "./css": "./dist/tokens.css"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node scripts/contrast-audit.mjs",
+    "typecheck": "node -e \"JSON.parse(require('fs').readFileSync('tokens.json','utf8'))\""
+  }
+}
