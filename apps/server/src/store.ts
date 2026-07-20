@@ -39,6 +39,42 @@ export interface ConnectorToken {
   createdAt: string;
 }
 
+/**
+ * OAuth 2.1 client allowlist entry (spec §6.4: dynamic registration is
+ * disabled in favor of an org-approved client set). An org_admin mints one
+ * per Claude surface (e.g. claude.ai) and enters the id/secret there.
+ */
+export interface OAuthClient {
+  clientId: string;
+  /** SHA-256 hex of the client secret; the secret itself is shown once. */
+  clientSecretHash: string;
+  name: string;
+  redirectUris: string[];
+  createdAt: string;
+  createdBy: string;
+}
+
+/** Bearer access token for the MCP resource, audience-bound (RFC 8707). */
+export interface OAuthAccessToken {
+  token: string;
+  clientId: string;
+  userId: string;
+  /** Space-delimited granted scopes. */
+  scope: string;
+  /** Audience — must equal the MCP resource URL at use time. */
+  resource: string;
+  expiresAtMs: number;
+}
+
+/** Refresh token so a connected Claude surface survives access-token expiry. */
+export interface OAuthRefreshToken {
+  token: string;
+  clientId: string;
+  userId: string;
+  scope: string;
+  resource: string;
+}
+
 /** Per-user Microsoft Graph delegated tokens (Calendars.Read). */
 export interface GraphAuth {
   userId: string;
@@ -56,6 +92,9 @@ export interface Db {
   sessions: Map<string, Session>;
   userSettings: Map<string, UserSettings>;
   connectorTokens: Map<string, ConnectorToken>;
+  oauthClients: Map<string, OAuthClient>; // clientId -> client
+  oauthAccessTokens: Map<string, OAuthAccessToken>; // token -> grant
+  oauthRefreshTokens: Map<string, OAuthRefreshToken>; // token -> grant
   graphAuth: Map<string, GraphAuth>;
   baa: BaaRegistry;
   consentPolicy: ConsentPolicy;
@@ -80,6 +119,9 @@ export function createDb(): Db {
     sessions: new Map(),
     userSettings: new Map(),
     connectorTokens: new Map(),
+    oauthClients: new Map(),
+    oauthAccessTokens: new Map(),
+    oauthRefreshTokens: new Map(),
     graphAuth: new Map(),
     baa: { assemblyai: false, awsBedrock: false, claudeWorkspace: false, microsoft: false },
     // WA-strict default (Q6): attestation mandatory before capture starts.

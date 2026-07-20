@@ -303,6 +303,54 @@ export function revokeConnectorToken(): Promise<void> {
   return api<{ ok: boolean }>("/me/connector-token", { method: "DELETE" }).then(() => undefined);
 }
 
+/* --------------------- MCP OAuth (claude.ai connector) ----------------- */
+
+export interface OAuthAuthorizeInfo {
+  clientName: string;
+  scopes: string[];
+  resource: string;
+}
+
+/** Consent-page lookup for a pending authorization request. */
+export function getOAuthAuthorizeInfo(rid: string): Promise<OAuthAuthorizeInfo> {
+  return api<OAuthAuthorizeInfo>(`/oauth/authorize/info?rid=${encodeURIComponent(rid)}`);
+}
+
+/** Approve or deny a pending request; returns where to send the browser next. */
+export function postOAuthDecision(rid: string, approve: boolean): Promise<{ redirectTo: string }> {
+  return api<{ redirectTo: string }>("/oauth/authorize/decision", {
+    method: "POST",
+    body: { rid, approve },
+  });
+}
+
+export interface OAuthClient {
+  clientId: string;
+  name: string;
+  redirectUris: string[];
+  createdAt: string;
+}
+
+export function listOAuthClients(): Promise<OAuthClient[]> {
+  return api<{ clients: OAuthClient[] }>("/admin/oauth-clients").then((r) => r.clients);
+}
+
+export function createOAuthClient(body: {
+  name: string;
+  redirectUris: string[];
+}): Promise<{ client: OAuthClient; clientSecret: string }> {
+  return api<{ client: OAuthClient; clientSecret: string }>("/admin/oauth-clients", {
+    method: "POST",
+    body,
+  });
+}
+
+export function deleteOAuthClient(clientId: string): Promise<void> {
+  return api<{ ok: boolean }>(`/admin/oauth-clients/${encodeURIComponent(clientId)}`, {
+    method: "DELETE",
+  }).then(() => undefined);
+}
+
 /* -------------------------------- shares ------------------------------- */
 
 export function postShare(

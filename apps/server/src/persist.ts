@@ -29,7 +29,15 @@ import {
   Utterance,
 } from "@collective/shared";
 import { User } from "@collective/shared";
-import { ConnectorToken, Db, GraphAuth, UserSettings } from "./store.js";
+import {
+  ConnectorToken,
+  Db,
+  GraphAuth,
+  OAuthAccessToken,
+  OAuthClient,
+  OAuthRefreshToken,
+  UserSettings,
+} from "./store.js";
 
 /* ------------------------------ audio store ---------------------------- */
 
@@ -88,7 +96,7 @@ export class DiskAudioStore implements AudioStore {
 /* ----------------------------- state snapshot --------------------------- */
 
 interface Snapshot {
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4;
   meetings: Meeting[];
   utterances: Array<[string, Utterance[]]>;
   notes: Array<[string, Note]>;
@@ -103,6 +111,10 @@ interface Snapshot {
   /** v3 additions: Microsoft-provisioned users/roles + Graph tokens. */
   users?: User[];
   graphAuth?: GraphAuth[];
+  /** v4 additions: MCP OAuth 2.1 client allowlist + issued tokens. */
+  oauthClients?: OAuthClient[];
+  oauthAccessTokens?: OAuthAccessToken[];
+  oauthRefreshTokens?: OAuthRefreshToken[];
 }
 
 export class StateSnapshotStore {
@@ -134,13 +146,17 @@ export class StateSnapshotStore {
     // role changes); older snapshots leave the seeded directory as-is.
     for (const u of snap.users ?? []) this.db.users.set(u.id, u);
     this.db.graphAuth = new Map((snap.graphAuth ?? []).map((g) => [g.userId, g]));
+    // v4: MCP OAuth allowlist + issued tokens (older snapshots have none).
+    this.db.oauthClients = new Map((snap.oauthClients ?? []).map((c) => [c.clientId, c]));
+    this.db.oauthAccessTokens = new Map((snap.oauthAccessTokens ?? []).map((t) => [t.token, t]));
+    this.db.oauthRefreshTokens = new Map((snap.oauthRefreshTokens ?? []).map((t) => [t.token, t]));
     return true;
   }
 
   /** Atomic write: temp file + rename, so a crash never truncates state. */
   save(): void {
     const snap: Snapshot = {
-      version: 3,
+      version: 4,
       meetings: [...this.db.meetings.values()],
       utterances: [...this.db.utterances.entries()],
       notes: [...this.db.notes.entries()],
@@ -153,6 +169,9 @@ export class StateSnapshotStore {
       connectorTokens: [...this.db.connectorTokens.values()],
       users: [...this.db.users.values()],
       graphAuth: [...this.db.graphAuth.values()],
+      oauthClients: [...this.db.oauthClients.values()],
+      oauthAccessTokens: [...this.db.oauthAccessTokens.values()],
+      oauthRefreshTokens: [...this.db.oauthRefreshTokens.values()],
     };
     writeFileSync(this.tmp, JSON.stringify(snap));
     renameSync(this.tmp, this.file);

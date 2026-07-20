@@ -36,11 +36,13 @@ Honest, story-level map of what exists in this repository versus the design spec
 | Voice memos — Sync API | §2.2 | 🔶 same |
 | Live captions — streaming relay to AssemblyAI v3 (`speaker_labels`, PCM16 relay, §6.6-gated, idle cost guard) | §2.2 (IN-2) | ✅ mock mode + real relay — validated against the live AssemblyAI endpoint on a keyed deployment (2026-07-20): captions render in real time while speaking |
 | Calendar naming — Microsoft Graph calendar (signed-in users) with per-user ICS feed fallback; untitled captures named from the current event, attendees matched by email | AT-3 | ✅ both paths tested (Graph via faked API; ICS parser/matching); precedence Graph → ICS → untitled |
-| Claude connector tokens — long-lived, revocable, MCP-surface-only bearer tokens + in-app "Connect Claude" setup card (Claude Desktop via mcp-remote today; claude.ai when publicly deployed) | §6.2 (revised: connector-first AI) | ✅ tested (mint/use/scope/revoke) |
+| Claude connector tokens — long-lived, revocable, MCP-surface-only bearer tokens + in-app "Connect Claude Desktop" setup card (Claude Desktop via mcp-remote) | §6.2 (revised: connector-first AI) | ✅ tested (mint/use/scope/revoke) |
+| claude.ai connector — admin-minted OAuth client + browser consent (Admin → "Claude connectors"); users authorize as themselves | §6.2, §6.4 | ✅ built + tested (dev slice) — 🔶 live claude.ai connect needs the public HTTPS deploy |
 | Attribution v1: mic-channel identity, roster name cues, margin rule, corrections, unknown speakers | §2.3.1, §2.3.4 | ✅ tested |
 | Insight — mock heuristic + fallback | §6.1 | ✅ |
 | Insight — Claude on Bedrock (`anthropic.claude-sonnet-5`, assignee validation, minimum-necessary payload) | §6.1, §6.5 | 🔶 adapter written; needs AWS account under BAA |
-| MCP server (5 tools, per-caller ACL, PHI gating, audit) | §6.2–6.4 | ✅ verified live over Streamable HTTP — 🚧 OAuth 2.1 resource-server front (RFC 9728/8707) before claude.ai exposure |
+| MCP server (5 tools, per-caller ACL, PHI gating, audit) | §6.2–6.4 | ✅ verified live over Streamable HTTP |
+| MCP OAuth 2.1 front: RFC 9728 + RFC 8414 discovery, authorization-code + PKCE (S256), RFC 8707 audience-bound tokens, refresh, allowlisted admin-minted clients (no open DCR), browser consent page, per-tool scopes | §6.4 | ✅ full flow tested (discovery, authorize→consent→token, refresh/rotation, PKCE/secret/audience/redirect deny paths, client revoke, 401+`WWW-Authenticate`) — 🔶 claude.ai end-to-end needs a public HTTPS deploy (`COLLECTIVE_PUBLIC_URL`) since Claude connects from Anthropic's cloud |
 | Search with query-time ACL + instant revocation | §3.3 | ✅ tested |
 
 ## Clients

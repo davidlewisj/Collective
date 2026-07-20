@@ -7,6 +7,7 @@ import { CapturePage } from "./pages/Capture";
 import { MeetingDetailPage } from "./pages/MeetingDetail";
 import { AdminPage } from "./pages/Admin";
 import { SettingsPage } from "./pages/Settings";
+import { ConnectConsentPage } from "./pages/ConnectConsent";
 
 /**
  * Last-resort error boundary: a render crash on one screen must never blank
@@ -52,6 +53,8 @@ function AppRoutes() {
     <div className="page-enter" key={location.pathname}>
       <Routes location={location}>
         <Route path="/login" element={<LoginPage />} />
+        {/* Consent handles its own auth (bounces through /login and back). */}
+        <Route path="/connect" element={<ConnectConsentPage />} />
         <Route
           path="/"
           element={

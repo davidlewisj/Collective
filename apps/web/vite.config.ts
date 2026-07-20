@@ -14,6 +14,8 @@ const apiPaths = [
   "/shares",
   "/mcp",
   "/me",
+  "/oauth",
+  "/.well-known",
 ];
 
 export default defineConfig({
@@ -36,11 +38,13 @@ export default defineConfig({
           // Only proxy API calls, never browser page navigations: /admin is
           // both a UI route and an API prefix, and without this bypass a
           // reload on /admin serves the API's JSON as the page. EXCEPTION:
-          // the Microsoft OAuth endpoints are real top-level navigations that
-          // must reach the server (the sign-in redirect), never the SPA.
+          // real top-level navigations that must reach the server, never the
+          // SPA — the Microsoft sign-in redirect and the MCP OAuth /
+          // discovery endpoints (which Claude hits directly).
           bypass: (req: { url?: string; headers: Record<string, string | string[] | undefined> }) => {
             const path = (req.url ?? "").split("?")[0];
             if (path === "/auth/microsoft" || path === "/auth/callback") return undefined;
+            if (path.startsWith("/oauth/") || path.startsWith("/.well-known/")) return undefined;
             const accept = String(req.headers.accept ?? "");
             if (accept.includes("text/html")) return "/index.html";
             return undefined;

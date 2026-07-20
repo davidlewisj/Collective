@@ -40,7 +40,19 @@ Every content read is audit-logged server-side. All list/detail responses are AC
 | GET `/admin/consent-policy` · PUT same | body `{requiredMechanisms, phiFailSafe}` → response `{policy}` | org_admin |
 | GET `/admin/retention` · PUT same | body `{audioDays, transcriptDays, auditDays}` → response `{retention}` | org_admin |
 
-**MCP server:** `POST /mcp` — Model Context Protocol (Streamable HTTP), same bearer auth, tools `search_meetings`, `list_meetings`, `get_meeting`, `get_transcript`, `get_action_items`. Results are ACL-filtered per caller and PHI-flag-gated per the BAA registry (spec §6.3, §6.6). No audio, no cross-user notes, no writes.
+**MCP server:** `POST /mcp` — Model Context Protocol (Streamable HTTP), tools `search_meetings`, `list_meetings`, `get_meeting`, `get_transcript`, `get_action_items`. Results are ACL-filtered per caller and PHI-flag-gated per the BAA registry (spec §6.3, §6.6). No audio, no cross-user notes, no writes. Accepts three credentials: an OAuth 2.1 access token (below), a long-lived connector token (`mcp_…`), or a normal session bearer. An unauthenticated request gets **401** with `WWW-Authenticate: Bearer resource_metadata="…"` (RFC 9728). Each tool is gated on a scope (`search_meetings`→`meetings.search`, `get_transcript`→`transcripts.read`, the rest→`meetings.read`).
+
+**MCP OAuth 2.1 (spec §6.4 — claude.ai custom connector):** the server is the authorization + resource server for `/mcp`. Dynamic client registration is disabled; an org_admin mints an allowlisted client and enters its id/secret into Claude.
+
+| Method & path | Body → Response | Notes |
+|---|---|---|
+| GET `/.well-known/oauth-protected-resource[/mcp]` | → RFC 9728 metadata | `{resource, authorization_servers, scopes_supported, bearer_methods_supported}` |
+| GET `/.well-known/oauth-authorization-server[/mcp]` | → RFC 8414 metadata | `authorization_endpoint`, `token_endpoint`, `code_challenge_methods_supported:["S256"]`; no `registration_endpoint` |
+| GET `/oauth/authorize` | `?response_type=code&client_id&redirect_uri&code_challenge&code_challenge_method=S256&scope&state&resource` | Validates client/redirect/PKCE/resource (RFC 8707), then 302 → `WEB_ORIGIN/connect?rid=…`; bad client/redirect renders an error page, never bounces |
+| GET `/oauth/authorize/info` | `?rid` → `{clientName, scopes, resource}` | Consent-page data (rid unguessable + short-lived) |
+| POST `/oauth/authorize/decision` | `{rid, approve}` → `{redirectTo}` | **Requires the signed-in user**; code is minted under *their* identity |
+| POST `/oauth/token` | form: `authorization_code` (code, redirect_uri, code_verifier, client_id/secret) or `refresh_token` → token set | PKCE-verified; audience-bound to the MCP resource; refresh rotates |
+| GET/POST/DELETE `/admin/oauth-clients[/:id]` | POST `{name, redirectUris}` → `{client, clientSecret}` (secret shown once) | org_admin; the allowlist; DELETE revokes the client and its tokens |
 
 **§6.6 gating semantics (server-enforced):**
 - Insight (summary) job: if `phiEffective(meeting)` and `!baa.awsBedrock` → job skipped, heuristic title, `ai.skippedReason` set.

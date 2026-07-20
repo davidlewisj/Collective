@@ -10,6 +10,24 @@ const SEED_USERS = [
   { email: "casey@collective.dev", label: "Casey · auditor" },
 ];
 
+const POST_LOGIN_KEY = "collective.postLogin";
+
+/**
+ * Where to land after signing in. Defaults to the meeting list, but a flow
+ * that bounced through login (e.g. the Claude connector consent page) can
+ * stash an in-app return path — only same-origin paths are honored.
+ */
+function takePostLoginTarget(): string {
+  try {
+    const target = sessionStorage.getItem(POST_LOGIN_KEY);
+    sessionStorage.removeItem(POST_LOGIN_KEY);
+    if (target && target.startsWith("/") && !target.startsWith("//")) return target;
+  } catch {
+    /* sessionStorage unavailable */
+  }
+  return "/";
+}
+
 export function LoginPage() {
   const { login, adoptToken } = useAuth();
   const navigate = useNavigate();
@@ -34,7 +52,7 @@ export function LoginPage() {
       history.replaceState(null, "", window.location.pathname); // token never lingers in the URL
       setBusy(true);
       adoptToken(msToken)
-        .then(() => navigate("/", { replace: true }))
+        .then(() => navigate(takePostLoginTarget(), { replace: true }))
         .catch(() => setError("Microsoft sign-in didn't complete. Try again."))
         .finally(() => setBusy(false));
     } else if (msError) {
@@ -50,7 +68,7 @@ export function LoginPage() {
     setError(null);
     try {
       await login(email);
-      navigate("/", { replace: true });
+      navigate(takePostLoginTarget(), { replace: true });
     } catch (err) {
       setError(
         err instanceof ApiError && err.status === 404
