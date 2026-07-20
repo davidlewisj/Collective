@@ -15,7 +15,7 @@ Per the working rules, assumptions are stated up front. Because this spec was pr
 |---|-----------|-----------------|
 | A1 | The organization is a US multi-entity healthcare group headquartered in **Washington State** (all-party consent, RCW 9.73.030; biometric statute RCW 19.375), with staff who may work across entities. Consent defaults are therefore set to the strictest state in the footprint. | Consent-workflow defaults and the state-law matrix in §2.6 would be retuned. |
 | A2 | The organization already runs **Microsoft 365** (Exchange calendars, Teams, Entra ID) under Microsoft's standard HIPAA BAA. Entra ID is the identity provider. | Calendar/Teams integrations and SSO would target Google Workspace instead; the Teams module (§2.3) becomes moot. |
-| A3 | Meeting content is **operational PHI-adjacent** (case conferences, referrals, scheduling huddles) rather than clinical documentation of record. The app is **not** an EHR and its notes are not chart notes; no HL7/FHIR export is required in v1. | If output must land in the EHR, add an export/integration workstream and stricter content classification. |
+| A3 | Meeting content is **operational PHI-adjacent** (case conferences, referrals, scheduling huddles) rather than clinical documentation of record. The app is **not** an EHR and its notes are not chart notes; no HL7/FHIR export is required in v1. **Confirmed by sponsor (2026-07-19, Q3): purely internal operational notes.** | If output must land in the EHR, add an export/integration workstream and stricter content classification. |
 | A4 | Scale is modest: **50–500 users**, tens of meetings/day, meetings ≤ 3 hours. Architecture is sized for this, not for consumer scale. | Storage/compute sizing and cost model change; design shape does not. |
 | A5 | The organization can operate (directly or via a managed provider) a small amount of **self-hosted GPU inference** for speaker embeddings (§5). | Fall back to the commercial speaker-ID option scored in §5. |
 | A6 | English is the primary meeting language for v1. | Multilingual support moves from v2 to v1 and constrains model choices. |
@@ -24,7 +24,7 @@ Per the working rules, assumptions are stated up front. Because this spec was pr
 
 1. **Which entity list and boundaries?** How many legal entities, and do any share workforce/BAA umbrellas? (Drives tenancy and retention partitioning, §3.3.)
 2. **Is Claude access needed inside claude.ai/Claude Desktop, or only inside our app?** The MCP server can serve both. **Resolved (2026-07-19, revised same day): v1 ships the direct Claude.ai chat connection** — Collective's MCP server is added to Claude.ai as a custom connector under the org's signed Anthropic BAA (HIPAA-ready Claude workspace); the in-app assistant is deferred to v2 (§6.2). Sponsor's product-classification note recorded in §6.5.
-3. **Will any recordings be treated as part of the designated record set** (subject to patient access/amendment rights)? Default assumption: no (A3).
+3. **Will any recordings be treated as part of the designated record set** (subject to patient access/amendment rights)? **Resolved (2026-07-19): no — purely internal operational notes** (A3 confirmed); no patient-access/amendment workflows or EHR export in scope.
 4. **Is BYOD mobile permitted**, or only managed devices? **Resolved (2026-07-19): BYOD is allowed, with device registration** — each device's ID is registered to its user at sign-in and only registered devices may capture or cache meeting data (§2.6.1).
 5. **Direct Anthropic API (with BAA + zero-data-retention) or AWS Bedrock** as the Claude path? Both are designed for in §6.5. **Resolved (2026-07-19): AWS Bedrock** — all backend Claude calls run on Bedrock under the org's AWS BAA; the direct Anthropic API remains the wired contingency. (The claude.ai chat connector is a separate Anthropic surface and is unaffected — §6.2, §6.6.)
 
@@ -640,7 +640,7 @@ WCAG 2.1 AA throughout: full keyboard operability (desktop), screen-reader label
 |---|---|---|---|
 | 1 | Entity map: how many legal entities, shared-workforce arrangements, one OHCA/affiliated-covered-entity umbrella or several? | Hard per-entity partitions with explicit cross-entity grants (§3.3) | Compliance + Legal |
 | 2 | ~~Do users need archive Q&A inside claude.ai/Claude Desktop, or is the in-app assistant enough for v1?~~ **Resolved (2026-07-19, revised same day): direct Claude.ai chat connection in v1** — custom connector to the MCP server under the signed Anthropic BAA (HIPAA-ready workspace); in-app assistant deferred to v2 (§6.2, §6.5 classification note) | Product + IT ✓ |
-| 3 | Are any recordings part of the designated record set / discoverable clinical documentation? | No (A3); if yes → EHR-export workstream, stricter retention defaults | Compliance |
+| 3 | ~~Are any recordings part of the designated record set / clinical documentation?~~ **Resolved (2026-07-19): no — purely internal operational notes.** A3 confirmed; patient-access/amendment workflows and EHR export stay out of scope unless usage changes (see §8.3 note) | Compliance ✓ |
 | 4 | ~~BYOD mobile allowed?~~ **Resolved (2026-07-19): allowed, with device registration** — device ID + attestation bound to the user at sign-in; capture/cache/playback on registered devices only; wipe on deregistration (§2.6.1, §4 row 16) | IT/Security ✓ |
 | 5 | ~~Direct Anthropic (BAA+ZDR) vs AWS Bedrock as the Claude path?~~ **Resolved (2026-07-19): AWS Bedrock** for all backend Claude calls under the AWS BAA; direct Anthropic API is the wired contingency; claude.ai connector surface unaffected (§6.5) | Procurement + Security ✓ |
 | 6 | Consent posture for one-party-consent states in the footprint: relax per state or WA-strict everywhere? | Strictest-entity-everywhere (simpler training, safer default) (§2.6.2) | Legal |
@@ -688,7 +688,7 @@ BAAs executed (AssemblyAI; AWS incl. Bedrock — the primary Claude path per Q5;
 - In-app assistant chat surface (Path A) — moved to v2 per revised Q2 (reuses the v1 tool registry); anomaly detection on audit stream
 - Cross-entity sharing controls, retention automation maturity (certificates, legal holds UI), admin analytics
 
-**v2+ candidates:** multilingual meetings; redaction tooling (PHI span redaction in transcript/audio); EHR export if Q3 flips; action-item write-back via MCP; room-device hardware kit; offline transcription exploration for air-gapped entities.
+**v2+ candidates:** multilingual meetings; redaction tooling (PHI span redaction in transcript/audio); action-item write-back via MCP; room-device hardware kit; offline transcription exploration for air-gapped entities. (EHR export was removed from candidacy — Q3 resolved: records are purely internal operational notes; revisit only if meetings start functioning as clinical documentation.)
 
 ---
 
