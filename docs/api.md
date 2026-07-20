@@ -15,7 +15,8 @@ Every content read is audit-logged server-side. All list/detail responses are AC
 | POST `/meetings/:id/consent` | `{mechanism, detail?}` → `{meeting}` | Records a consent artifact |
 | POST `/meetings/:id/start` | → `{meeting}` | **409 `consent_required`** until policy satisfied (spec §2.6.2) |
 | POST `/meetings/:id/chunks` | `{seq, dataBase64}` → `{received}` | Audio chunk during recording |
-| GET `/meetings/:id/live` | Server-Sent Events | `caption` events (live turns with cluster labels), `status` events |
+| GET `/meetings/:id/live` | Server-Sent Events | `caption` events (live turns with cluster labels), `status` events (incl. `liveCaptions` flag) |
+| WS `/meetings/:id/stream` | `?token=&rate=16000`; binary PCM16 frames up | Live-caption streaming relay → AssemblyAI v3 (owner only, while recording; §6.6-gated; token as query param because browser WS can't set headers) |
 | POST `/meetings/:id/stop` | → `{meeting}` | → `processing`; pipeline: transcribe → attribute → insight; → `ready` |
 | POST `/meetings/:id/objection` | → `{meeting}` | Stops + deletes audio, keeps notes (spec §2.6.2 objection path) |
 | GET `/meetings/:id/transcript` | → `{utterances}` | Requires transcript access |
