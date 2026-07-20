@@ -11,6 +11,7 @@ import {
   appendAuditEvent,
   loadAuditEvents,
 } from "./persist.js";
+import { MsGraph, graphConfigFromEnv } from "./msgraph.js";
 import { makeRelayFactory } from "./relay.js";
 import { startRetentionWorker } from "./retention.js";
 import { applyEnvOverrides, createDb, seedUsers } from "./store.js";
@@ -51,7 +52,9 @@ if (transcriber.name === "mock" && insight.name === "mock") {
 
 const audioStore = new DiskAudioStore(dataDir);
 const upstreamFactory = makeRelayFactory();
-const app = buildApp({ db, audit, transcriber, insight, audioStore, upstreamFactory });
+const graphCfg = graphConfigFromEnv();
+const graph = graphCfg ? new MsGraph(graphCfg) : null;
+const app = buildApp({ db, audit, transcriber, insight, audioStore, upstreamFactory, graph });
 snapshot.startAutosave();
 startRetentionWorker(db, audit, audioStore);
 
@@ -75,6 +78,7 @@ app
     console.log(
       `  data: ${dataDir} (${restored ? `restored ${db.meetings.size} meeting(s), ${priorEvents.length} audit events` : "fresh"})`,
     );
+    console.log(`  microsoft sign-in: ${graph ? "on (Entra ID)" : "off — set GRAPH_TENANT_ID/GRAPH_CLIENT_ID/GRAPH_CLIENT_SECRET"}`);
     console.log(`  dev users: dana@ | omar@ | priya@ | casey@  (collective.dev)`);
   })
   .catch((err) => {

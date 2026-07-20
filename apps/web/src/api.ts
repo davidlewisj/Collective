@@ -265,6 +265,44 @@ export async function fetchAudioBlob(id: string): Promise<Blob | null> {
   return res.blob();
 }
 
+/* --------------------------------- auth -------------------------------- */
+
+export function getAuthConfig(): Promise<{ microsoft: boolean }> {
+  return api<{ microsoft: boolean }>("/auth/config");
+}
+
+/* ------------------------------- settings ------------------------------ */
+
+export interface UserSettings {
+  calendarIcsUrl?: string;
+}
+
+export function getSettings(): Promise<UserSettings> {
+  return api<{ settings: UserSettings }>("/me/settings").then((r) => r.settings);
+}
+
+export function putSettings(body: { calendarIcsUrl: string }): Promise<UserSettings> {
+  return api<{ settings: UserSettings }>("/me/settings", { method: "PUT", body }).then((r) => r.settings);
+}
+
+export function getCalendarPreview(): Promise<{ title: string; attendeeEmails: string[] } | null> {
+  return api<{ event: { title: string; attendeeEmails: string[] } | null }>("/me/calendar-preview").then(
+    (r) => r.event,
+  );
+}
+
+export function getConnectorTokenStatus(): Promise<{ exists: boolean; createdAt: string | null }> {
+  return api<{ exists: boolean; createdAt: string | null }>("/me/connector-token");
+}
+
+export function mintConnectorToken(): Promise<string> {
+  return api<{ token: string }>("/me/connector-token", { method: "POST" }).then((r) => r.token);
+}
+
+export function revokeConnectorToken(): Promise<void> {
+  return api<{ ok: boolean }>("/me/connector-token", { method: "DELETE" }).then(() => undefined);
+}
+
 /* -------------------------------- shares ------------------------------- */
 
 export function postShare(

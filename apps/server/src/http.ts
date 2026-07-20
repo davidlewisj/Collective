@@ -29,10 +29,12 @@ import {
   speakerNameFn,
 } from "./pipeline.js";
 import { search } from "./search.js";
-import { Db, newId, userByEmail } from "./store.js";
+import { Db, linkOrProvisionUser, newId, userByEmail } from "./store.js";
+import { MsGraph } from "./msgraph.js";
 import { Insight } from "./adapters/insight.js";
 import { Transcriber } from "./adapters/transcriber.js";
 import { AudioStore, MemoryAudioStore } from "./persist.js";
+import { IcsFetcher, currentCalendarEvent, httpIcsFetcher } from "./calendar.js";
 import { StreamingRelay, UpstreamFactory } from "./relay.js";
 import { registerMcp } from "./mcp.js";
 
@@ -45,6 +47,12 @@ export interface AppDeps {
   audioStore?: AudioStore;
   /** Live-caption vendor socket factory (relay.ts); null/absent = no live vendor captions. */
   upstreamFactory?: UpstreamFactory | null;
+  /** ICS feed fetcher (calendar.ts); injectable for tests. */
+  icsFetcher?: IcsFetcher;
+  /** Microsoft Entra sign-in + Graph calendar (msgraph.ts); null = not configured. */
+  graph?: MsGraph | null;
+  /** Where the web app lives, for post-sign-in redirects. */
+  webOrigin?: string;
 }
 
 declare module "fastify" {
@@ -113,7 +121,77 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     return { token, user };
   });
 
-  const PUBLIC = new Set(["/auth/dev-login", "/health"]);
+  /* ------------------- Microsoft Entra sign-in (ID-1) ------------------ */
+
+  const graph = deps.graph ?? null;
+  const webOrigin = (deps.webOrigin ?? process.env.WEB_ORIGIN ?? "http://localhost:5173").replace(/\/+$/, "");
+  const oauthStates = new Map<string, number>(); // state -> createdAt (CSRF)
+
+  app.get("/auth/config", async () => ({ microsoft: !!graph }));
+
+  app.get("/auth/microsoft", async (_req, reply) => {
+    if (!graph) return fail(reply, 404, "microsoft sign-in not configured");
+    const state = randomBytes(16).toString("hex");
+    oauthStates.set(state, Date.now());
+    for (const [s, at] of oauthStates) if (Date.now() - at > 10 * 60 * 1000) oauthStates.delete(s);
+    return reply.redirect(graph.authorizeUrl(state));
+  });
+
+  app.get("/auth/callback", async (req, reply) => {
+    if (!graph) return fail(reply, 404, "microsoft sign-in not configured");
+    const q = req.query as { code?: string; state?: string; error?: string; error_description?: string };
+    const back = (frag: string) => reply.redirect(`${webOrigin}/login#${frag}`);
+    if (q.error) return back(`msError=${encodeURIComponent(q.error_description ?? q.error)}`);
+    if (!q.code || !q.state || !oauthStates.has(q.state)) return back("msError=invalid_state");
+    oauthStates.delete(q.state);
+    try {
+      const tokens = await graph.exchangeCode(q.code);
+      if (!tokens.claims.email) return back("msError=no_email_claim");
+      const user = linkOrProvisionUser(db, tokens.claims);
+      if (user.deactivated) return back("msError=account_deactivated");
+      if (tokens.refreshToken) {
+        db.graphAuth.set(user.id, {
+          userId: user.id,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresAtMs: tokens.expiresAtMs,
+        });
+      }
+      const token = randomBytes(24).toString("hex");
+      db.sessions.set(token, { token, userId: user.id, createdAt: Date.now(), lastSeenAt: Date.now() });
+      audit.emit({
+        actorUserId: user.id,
+        action: "session.login_microsoft",
+        detail: `oid=${tokens.claims.oid}${tokens.claims.amr ? ` amr=${tokens.claims.amr.join("+")}` : ""}`,
+      });
+      return back(`msToken=${token}`);
+    } catch (err) {
+      audit.emit({ actorUserId: "system_auth", action: "session.login_microsoft_failed", detail: String(err) });
+      return back("msError=signin_failed");
+    }
+  });
+
+  /** Fresh Graph access token for a user, refreshing when near expiry. */
+  const graphAccessToken = async (userId: string): Promise<string | undefined> => {
+    if (!graph) return undefined;
+    const auth = db.graphAuth.get(userId);
+    if (!auth) return undefined;
+    if (auth.expiresAtMs - Date.now() > 60_000) return auth.accessToken;
+    try {
+      const t = await graph.refresh(auth.refreshToken);
+      db.graphAuth.set(userId, {
+        userId,
+        accessToken: t.accessToken,
+        refreshToken: t.refreshToken ?? auth.refreshToken,
+        expiresAtMs: t.expiresAtMs,
+      });
+      return t.accessToken;
+    } catch {
+      return undefined; // stale grant — user signs in with Microsoft again
+    }
+  };
+
+  const PUBLIC = new Set(["/auth/dev-login", "/health", "/auth/config", "/auth/microsoft", "/auth/callback"]);
   app.addHook("preHandler", async (req: FastifyRequest, reply: FastifyReply) => {
     const path = req.url.split("?")[0]!;
     if (PUBLIC.has(path)) return;
@@ -121,6 +199,20 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     // stream route (and only it) may pass the bearer token as ?token=.
     const wsToken = path.endsWith("/stream") ? ((req.query as { token?: string }).token ?? "") : "";
     const token = (req.headers.authorization ?? "").replace(/^Bearer /, "") || wsToken;
+
+    // Long-lived connector tokens authenticate the MCP surface ONLY (the
+    // Claude connector can't re-login every 15 idle minutes); they carry no
+    // access to any other route and are revocable in Settings.
+    if (path === "/mcp") {
+      const ct = db.connectorTokens.get(token);
+      if (ct) {
+        const user = db.users.get(ct.userId);
+        if (!user || user.deactivated) return fail(reply, 401, "unauthenticated");
+        req.user = user;
+        return;
+      }
+    }
+
     const session = db.sessions.get(token);
     if (!session) return fail(reply, 401, "unauthenticated");
     const idleMs = db.idleMinutes * 60 * 1000;
@@ -136,6 +228,60 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
   app.get("/health", async () => ({ ok: true }));
   app.get("/me", async (req) => ({ user: req.user }));
+
+  /* --------------------------- user settings --------------------------- */
+
+  app.get("/me/settings", async (req) => ({
+    settings: db.userSettings.get(req.user.id) ?? {},
+  }));
+
+  app.put("/me/settings", async (req) => {
+    const body = z
+      .object({ calendarIcsUrl: z.string().url().max(2000).or(z.literal("")) })
+      .parse(req.body);
+    const settings = { ...db.userSettings.get(req.user.id) };
+    settings.calendarIcsUrl = body.calendarIcsUrl || undefined;
+    db.userSettings.set(req.user.id, settings);
+    audit.emit({
+      actorUserId: req.user.id,
+      action: "settings.calendar_updated",
+      detail: body.calendarIcsUrl ? "ICS feed set" : "ICS feed cleared",
+    });
+    return { settings };
+  });
+
+  app.get("/me/calendar-preview", async (req, reply) => {
+    // Settings "test" button: what would a capture started now be called?
+    if (!db.graphAuth.has(req.user.id) && !db.userSettings.get(req.user.id)?.calendarIcsUrl) {
+      return fail(reply, 404, "no calendar configured");
+    }
+    const hit = await eventForUserNow(req.user.id);
+    return {
+      event: hit ? { title: hit.event.summary, attendeeEmails: hit.event.attendeeEmails, source: hit.source } : null,
+    };
+  });
+
+  /* ---------------------- Claude connector tokens ---------------------- */
+
+  app.get("/me/connector-token", async (req) => {
+    const existing = [...db.connectorTokens.values()].find((t) => t.userId === req.user.id);
+    return { exists: !!existing, createdAt: existing?.createdAt ?? null };
+  });
+
+  app.post("/me/connector-token", async (req) => {
+    // One active token per user; minting replaces (and so revokes) the old one.
+    for (const [k, t] of db.connectorTokens) if (t.userId === req.user.id) db.connectorTokens.delete(k);
+    const token = `mcp_${randomBytes(24).toString("hex")}`;
+    db.connectorTokens.set(token, { token, userId: req.user.id, createdAt: new Date().toISOString() });
+    audit.emit({ actorUserId: req.user.id, action: "connector_token.minted" });
+    return { token }; // shown once; only its existence is retrievable later
+  });
+
+  app.delete("/me/connector-token", async (req) => {
+    for (const [k, t] of db.connectorTokens) if (t.userId === req.user.id) db.connectorTokens.delete(k);
+    audit.emit({ actorUserId: req.user.id, action: "connector_token.revoked" });
+    return { ok: true };
+  });
   app.get("/users", async () => ({
     users: [...db.users.values()].map(({ id, displayName, role, speakerHue }) => ({ id, displayName, role, speakerHue })),
   }));
@@ -155,6 +301,27 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       .map((m) => ({ ...m, myLayers: readableLayers(db, req.user, m) }));
     return { meetings };
   });
+
+  const icsFetcher = deps.icsFetcher ?? httpIcsFetcher;
+
+  /** Calendar event covering "now" for a user: Graph first, ICS fallback. */
+  const eventForUserNow = async (userId: string) => {
+    const accessToken = await graphAccessToken(userId);
+    if (accessToken && graph) {
+      try {
+        const event = await graph.currentEvent(accessToken);
+        if (event) return { event, source: "graph" as const };
+      } catch {
+        /* fall through to ICS */
+      }
+    }
+    const icsUrl = db.userSettings.get(userId)?.calendarIcsUrl;
+    if (icsUrl) {
+      const event = await currentCalendarEvent(icsUrl, icsFetcher);
+      if (event) return { event, source: "ics" as const };
+    }
+    return undefined;
+  };
 
   app.post("/meetings", async (req) => {
     const body = z
@@ -177,6 +344,31 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       audioChunks: 0,
       createdAt: new Date().toISOString(),
     };
+
+    // Calendar naming (AT-3): untitled meetings pick up the current calendar
+    // event's name — Microsoft Graph when the owner signed in with Microsoft,
+    // else their ICS feed — plus attendees whose emails match the directory.
+    // Any calendar failure silently yields an untitled meeting.
+    if (!meeting.title) {
+      const hit = await eventForUserNow(req.user.id);
+      if (hit) {
+        meeting.title = hit.event.summary.slice(0, 200);
+        meeting.namedFromCalendar = true;
+        for (const email of hit.event.attendeeEmails) {
+          const u = userByEmail(db, email);
+          if (u && u.id !== req.user.id && !meeting.attendeeUserIds.includes(u.id)) {
+            meeting.attendeeUserIds.push(u.id);
+          }
+        }
+        audit.emit({
+          actorUserId: req.user.id,
+          action: "meeting.named_from_calendar",
+          meetingId: meeting.id,
+          detail: `"${meeting.title}" via ${hit.source} +${hit.event.attendeeEmails.length} attendee email(s)`,
+        });
+      }
+    }
+
     db.meetings.set(meeting.id, meeting);
     audit.emit({ actorUserId: req.user.id, action: "meeting.create", meetingId: meeting.id });
     return { meeting };
@@ -470,6 +662,20 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   const adminOnly = (req: FastifyRequest, reply: FastifyReply) => {
     if (!isAdmin(req.user)) fail(reply, 403, "admin only");
   };
+
+  app.put("/admin/users/:id/role", async (req, reply) => {
+    adminOnly(req, reply);
+    const { id } = req.params as { id: string };
+    const { role } = z
+      .object({ role: z.enum(["org_admin", "entity_admin", "compliance_auditor", "member", "guest_viewer"]) })
+      .parse(req.body);
+    if (id === req.user.id) return fail(reply, 400, "cannot change your own role");
+    const target = db.users.get(id);
+    if (!target) return fail(reply, 404, "unknown user");
+    target.role = role;
+    audit.emit({ actorUserId: req.user.id, action: "admin.role_changed", detail: `${id} → ${role}` });
+    return { user: target };
+  });
 
   app.get("/admin/baa-registry", async (req, reply) => (adminOnly(req, reply), { baa: db.baa }));
   app.put("/admin/baa-registry", async (req, reply) => {

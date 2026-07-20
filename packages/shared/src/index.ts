@@ -117,6 +117,8 @@ export interface Meeting {
   ai?: AiOutputs;
   audioChunks: number;
   createdAt: string;
+  /** Title/attendees were pre-filled from the owner's calendar feed. */
+  namedFromCalendar?: boolean;
 }
 
 export interface Note {

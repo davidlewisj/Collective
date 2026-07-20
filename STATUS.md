@@ -21,7 +21,7 @@ Honest, story-level map of what exists in this repository versus the design spec
 | Per-meeting PHI flag + BAA-registry egress gating (insight, MCP, **and** real-vendor transcription) + fail-safe + owner reprocess after registry changes | §6.6 | ✅ (all three gates tested; pulled forward from Phase 1.5) |
 | Retention clocks + deletion cascade | §2.6.4 | ✅ sweep tested — 🚧 soft-delete window, backup expiry, deletion certificates |
 | Session idle timeout | §2.6.1 | ✅ server-side — 🚧 client lock UX |
-| OIDC SSO (Entra ID), MFA, SCIM, device registry | §2.6.1 | 🚧 dev-login stands in; designs in issues #11–#15 |
+| Microsoft Entra ID sign-in (ID-1): confidential-client code flow, email link-or-provision (least privilege), role management endpoint, `amr` (MFA) recorded per sign-in | §2.6.1 (#11) | ✅ flow tested against a faked token endpoint — 🔶 live-tenant validation pending; JWKS signature verification is prod hardening. MFA enforcement = tenant conditional access. SCIM + device registry still 🚧 (#14/#15) |
 | Durable local persistence (meetings/transcripts/notes/shares/policies survive restarts; audio on disk; append-only audit journal chain-verified at boot) | §3.3 dev slice | ✅ behind the storage seam (`persist.ts`); sessions intentionally ephemeral |
 | Encryption at rest w/ per-entity KMS keys + Postgres/RLS + WORM audit | §3.3 | 🚧 the production stores (PF-1..3) swap in behind the same seam; SCP guardrails already in `infra/policies/` |
 | BAAs (AssemblyAI, AWS, Microsoft, Anthropic workspace) | §2.6.5 | ⛔ human signatures — runbook + issues #6/#7/#8/#9; server's BAA registry mirrors them at runtime |
@@ -34,7 +34,9 @@ Honest, story-level map of what exists in this repository versus the design spec
 | Diarized transcription — mock adapter | §2.2 | ✅ deterministic dev engine |
 | Diarized transcription — AssemblyAI async (`speaker_labels`, eager delete) | §2.2 | 🔶 real REST adapter written; needs a keyed account + BAA to validate |
 | Voice memos — Sync API | §2.2 | 🔶 same |
-| Live captions — streaming relay to AssemblyAI v3 (`speaker_labels`, PCM16 relay, §6.6-gated, idle cost guard) | §2.2 (IN-2) | ✅ mock mode + 🔶 real relay implemented, unit-tested, and e2e-verified against a protocol-faithful fake vendor — final validation against the live AssemblyAI endpoint needs a keyed run |
+| Live captions — streaming relay to AssemblyAI v3 (`speaker_labels`, PCM16 relay, §6.6-gated, idle cost guard) | §2.2 (IN-2) | ✅ mock mode + real relay — validated against the live AssemblyAI endpoint on a keyed deployment (2026-07-20): captions render in real time while speaking |
+| Calendar naming — Microsoft Graph calendar (signed-in users) with per-user ICS feed fallback; untitled captures named from the current event, attendees matched by email | AT-3 | ✅ both paths tested (Graph via faked API; ICS parser/matching); precedence Graph → ICS → untitled |
+| Claude connector tokens — long-lived, revocable, MCP-surface-only bearer tokens + in-app "Connect Claude" setup card (Claude Desktop via mcp-remote today; claude.ai when publicly deployed) | §6.2 (revised: connector-first AI) | ✅ tested (mint/use/scope/revoke) |
 | Attribution v1: mic-channel identity, roster name cues, margin rule, corrections, unknown speakers | §2.3.1, §2.3.4 | ✅ tested |
 | Insight — mock heuristic + fallback | §6.1 | ✅ |
 | Insight — Claude on Bedrock (`anthropic.claude-sonnet-5`, assignee validation, minimum-necessary payload) | §6.1, §6.5 | 🔶 adapter written; needs AWS account under BAA |

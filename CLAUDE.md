@@ -45,7 +45,7 @@ Dev users: `dana@` (org_admin) · `omar@` / `priya@` (members) · `casey@` (comp
 ## Where the seams are (for the next phase of work)
 
 - **Persistence**: `apps/server/src/persist.ts` — durable local stores (JSON snapshot, disk audio, append-only audit journal) under `COLLECTIVE_DATA_DIR`; the seam's production target is Aurora Postgres + RLS, S3, WORM audit (PF-3).
-- **Auth**: dev-login in `http.ts` → Entra ID OIDC + SCIM + device registry (issues #11–#15).
+- **Auth**: Entra ID sign-in implemented (`msgraph.ts`, confidential-client flow; dev-login retained for tests/dev); remaining: JWKS signature verification, SCIM, device registry (issues #14–#15).
 - **Live captions**: mock SSE in `pipeline.ts` → AssemblyAI v3 WebSocket relay (IN-2).
 - **Desktop capture**: `apps/desktop` has loopback plumbing; per-process WASAPI + macOS Core Audio taps need native modules on real hardware (`docs/desktop-capture.md`).
 - **MCP**: works over Streamable HTTP with bearer auth; needs the OAuth 2.1 resource-server front (RFC 9728/8707) before claude.ai exposure (spec §6.4).

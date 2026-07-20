@@ -10,6 +10,7 @@ import {
 import { Navigate, useLocation } from "react-router-dom";
 import type { User } from "@collective/shared";
 import {
+  apiUrl,
   devLogin,
   loadSession,
   resetCaches,
@@ -22,6 +23,8 @@ interface AuthContextValue {
   session: AuthSession | null;
   user: User | null;
   login: (email: string) => Promise<void>;
+  /** Adopt a server-issued session token (Microsoft sign-in redirect). */
+  adoptToken: (token: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -43,14 +46,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(next);
   }, []);
 
+  const adoptToken = useCallback(async (token: string) => {
+    const res = await fetch(apiUrl("/me"), { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) throw new Error("token rejected");
+    const { user } = (await res.json()) as { user: User };
+    const next: AuthSession = { token, user };
+    saveSession(next);
+    resetCaches();
+    setSession(next);
+  }, []);
+
   useEffect(() => {
     setUnauthorizedHandler(logout);
     return () => setUnauthorizedHandler(null);
   }, [logout]);
 
   const value = useMemo(
-    () => ({ session, user: session?.user ?? null, login, logout }),
-    [session, login, logout],
+    () => ({ session, user: session?.user ?? null, login, adoptToken, logout }),
+    [session, login, adoptToken, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { ApiError } from "../api";
+import { ApiError, apiUrl, getAuthConfig } from "../api";
 import { useAuth } from "../auth";
 
 const SEED_USERS = [
@@ -11,11 +11,37 @@ const SEED_USERS = [
 ];
 
 export function LoginPage() {
-  const { login } = useAuth();
+  const { login, adoptToken } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [microsoft, setMicrosoft] = useState(false);
+
+  useEffect(() => {
+    getAuthConfig()
+      .then((c) => setMicrosoft(c.microsoft))
+      .catch(() => setMicrosoft(false));
+  }, []);
+
+  // Returning from Microsoft sign-in: the server redirects here with the
+  // session token (or an error) in the URL fragment.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    const msToken = params.get("msToken");
+    const msError = params.get("msError");
+    if (msToken) {
+      history.replaceState(null, "", window.location.pathname); // token never lingers in the URL
+      setBusy(true);
+      adoptToken(msToken)
+        .then(() => navigate("/", { replace: true }))
+        .catch(() => setError("Microsoft sign-in didn't complete. Try again."))
+        .finally(() => setBusy(false));
+    } else if (msError) {
+      history.replaceState(null, "", window.location.pathname);
+      setError(`Microsoft sign-in failed: ${msError.replaceAll("_", " ")}`);
+    }
+  }, [adoptToken, navigate]);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -54,6 +80,11 @@ export function LoginPage() {
         <button type="submit" className="btn btn-block" disabled={busy || !email.trim()}>
           {busy ? "Signing in…" : "Sign in"}
         </button>
+        {microsoft && (
+          <a className="btn-quiet btn-block login-ms" href={apiUrl("/auth/microsoft")}>
+            Sign in with Microsoft
+          </a>
+        )}
         {error && (
           <p className="field-error" role="alert">
             {error}

@@ -137,6 +137,7 @@ export function MeetingListPage() {
         <span className="wordmark">Collective</span>
         <nav className="list-nav" aria-label="Account">
           {showAdmin && <Link to="/admin">Admin</Link>}
+          <Link to="/settings">Settings</Link>
           <span className="list-user">{user?.displayName}</span>
           <button type="button" className="btn-quiet" onClick={logout}>
             Sign out
