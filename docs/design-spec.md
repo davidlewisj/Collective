@@ -668,6 +668,8 @@ All seven open questions are now resolved (as of 2026-07-19); the table is retai
 
 ### 8.3 Build phases
 
+Phase 0 and Phase 1 are decomposed into a story-level engineering backlog with epics, sizes, dependencies, spikes, and milestone gates: [engineering-backlog-phase-0-1.md](engineering-backlog-phase-0-1.md).
+
 **Phase 0 — Compliance foundation (runs first and throughout)**
 BAAs executed (AssemblyAI; AWS incl. Bedrock — the primary Claude path per Q5; Microsoft licensing confirmation; Anthropic HIPAA-ready Claude workspace for the connector, else §6.6 non-PHI mode); HIPAA risk analysis; consent copy with counsel (recording + biometric); audit/retention infrastructure; SSO+MFA+RBAC skeleton; device registry (Q4). *Nothing records PHI before this lands.*
 
@@ -675,7 +677,7 @@ BAAs executed (AssemblyAI; AWS incl. Bedrock — the primary Claude path per Q5;
 - Desktop capture (Windows WASAPI incl. per-process where available; macOS taps + SCK fallback), AEC, local-first durability
 - Streaming live captions + async diarized transcript of record; voice-memo Sync path
 - Attribution v1: mic-channel identity, calendar roster + name-cue mapping, manual correction UX
-- Per-meeting record (audio/transcript/private notes/AI outputs); Claude title/summary/actions (BAA+ZDR)
+- Per-meeting record (audio/transcript/private notes/AI outputs); Claude title/summary/actions (via Bedrock under the AWS BAA, Q5)
 - Consent workflow v1 (invite disclosure, announcement attestation, tone); per-entity retention clocks; audit log + auditor view; per-layer sharing with most-restricted defaults
 - Meeting list / live capture / meeting detail / sharing screens on the full token system
 
