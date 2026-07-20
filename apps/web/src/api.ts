@@ -265,6 +265,12 @@ export async function fetchAudioBlob(id: string): Promise<Blob | null> {
   return res.blob();
 }
 
+/* --------------------------------- auth -------------------------------- */
+
+export function getAuthConfig(): Promise<{ microsoft: boolean }> {
+  return api<{ microsoft: boolean }>("/auth/config");
+}
+
 /* ------------------------------- settings ------------------------------ */
 
 export interface UserSettings {

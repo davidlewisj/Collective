@@ -39,6 +39,14 @@ export interface ConnectorToken {
   createdAt: string;
 }
 
+/** Per-user Microsoft Graph delegated tokens (Calendars.Read). */
+export interface GraphAuth {
+  userId: string;
+  accessToken: string;
+  refreshToken: string;
+  expiresAtMs: number;
+}
+
 export interface Db {
   users: Map<string, User>;
   meetings: Map<string, Meeting>;
@@ -48,6 +56,7 @@ export interface Db {
   sessions: Map<string, Session>;
   userSettings: Map<string, UserSettings>;
   connectorTokens: Map<string, ConnectorToken>;
+  graphAuth: Map<string, GraphAuth>;
   baa: BaaRegistry;
   consentPolicy: ConsentPolicy;
   retention: RetentionPolicy;
@@ -71,6 +80,7 @@ export function createDb(): Db {
     sessions: new Map(),
     userSettings: new Map(),
     connectorTokens: new Map(),
+    graphAuth: new Map(),
     baa: { assemblyai: false, awsBedrock: false, claudeWorkspace: false, microsoft: false },
     // WA-strict default (Q6): attestation mandatory before capture starts.
     consentPolicy: {
@@ -100,8 +110,33 @@ export function seedUsers(db: Db): void {
 }
 
 export function userByEmail(db: Db, email: string): User | undefined {
-  for (const u of db.users.values()) if (u.email === email) return u;
+  const needle = email.toLowerCase();
+  for (const u of db.users.values()) if (u.email.toLowerCase() === needle) return u;
   return undefined;
+}
+
+/**
+ * Microsoft sign-in user mapping: link by email when the account matches an
+ * existing user; otherwise auto-provision as a member (least privilege — an
+ * org_admin can promote via PUT /admin/users/:id/role).
+ */
+export function linkOrProvisionUser(
+  db: Db,
+  claims: { email: string; name: string; oid: string },
+): User {
+  const existing = userByEmail(db, claims.email);
+  if (existing) return existing;
+  const id = `u_ms_${claims.oid.replace(/[^a-zA-Z0-9]/g, "").slice(0, 12) || Date.now().toString(36)}`;
+  const user: User = {
+    id,
+    email: claims.email.toLowerCase(),
+    displayName: claims.name,
+    role: "member",
+    entityId: ENTITY,
+    speakerHue: speakerHueForId(id),
+  };
+  db.users.set(id, user);
+  return user;
 }
 
 /**
