@@ -54,11 +54,11 @@ Derived from [design-spec.md](design-spec.md) §8.3. Every story traces to a spe
 
 | ID | Story | Acceptance criteria | Size | Deps | Spec |
 |---|---|---|---|---|---|
-| ID-1 | OIDC SSO against Entra ID | Auth-code + PKCE; MFA enforced via conditional-access check; no local passwords | M | PF-1 | §2.6.1 |
-| ID-2 | RBAC model & policy decision point | Roles (Org Admin, Entity Admin, Compliance Auditor, Member, Guest-viewer); additive scoped grants; deny-by-default; policy unit-tested | L | ID-1 | §2.6.1 |
-| ID-3 | Session management | Idle timeout (default 15 min, configurable 5–60); refresh expiry; org-wide revocation | M | ID-1 | §2.6.1 |
-| ID-4 | SCIM deprovisioning | Entra ID SCIM feed disables users + revokes sessions/devices within 5 min | M | ID-1 | §2.6.1 |
-| ID-5 | Device registry ⚕ | Device ID + attestation (App Attest/Play Integrity/desktop cert) bound to user at first sign-in; token device-binding; self-service + admin list; deregistration wipes app data; audit events | L | ID-1, AR-1 | §2.6.1, §4 r16 |
+| ID-1 | OIDC SSO against Entra ID — **kicked off:** [issue #11](https://github.com/davidlewisj/Collective/issues/11) | Auth-code + PKCE; MFA enforced via conditional-access check; no local passwords | M | PF-1 | §2.6.1 |
+| ID-2 | RBAC model & policy decision point — **kicked off:** [issue #12](https://github.com/davidlewisj/Collective/issues/12) | Roles (Org Admin, Entity Admin, Compliance Auditor, Member, Guest-viewer); additive scoped grants; deny-by-default; policy unit-tested | L | ID-1 | §2.6.1 |
+| ID-3 | Session management — **kicked off:** [issue #13](https://github.com/davidlewisj/Collective/issues/13) | Idle timeout (default 15 min, configurable 5–60); refresh expiry; org-wide revocation | M | ID-1 | §2.6.1 |
+| ID-4 | SCIM deprovisioning — **kicked off:** [issue #14](https://github.com/davidlewisj/Collective/issues/14) | Entra ID SCIM feed disables users + revokes sessions/devices within 5 min | M | ID-1 | §2.6.1 |
+| ID-5 | Device registry ⚕ — **kicked off:** [issue #15](https://github.com/davidlewisj/Collective/issues/15) | Device ID + attestation (App Attest/Play Integrity/desktop cert) bound to user at first sign-in; token device-binding; self-service + admin list; deregistration wipes app data; audit events | L | ID-1, AR-1 | §2.6.1, §4 r16 |
 
 ### E0.3 Platform foundation (owner: DevOps)
 

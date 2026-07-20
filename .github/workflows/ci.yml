@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build design tokens
+        run: npm run build --workspace packages/tokens
+      - name: Contrast audit (WCAG 2.1 AA token pairings)
+        run: npm test --workspace packages/tokens
+      - name: Typecheck
+        run: npm run typecheck --workspaces --if-present
+      - name: Server tests (compliance core)
+        run: npm test --workspace apps/server
+      - name: Web build
+        run: npm run build --workspace apps/web
+      - name: Desktop shell syntax check (no Electron binary in CI)
+        run: |
+          node --check apps/desktop/src/main.js
+          node --check apps/desktop/src/preload.js

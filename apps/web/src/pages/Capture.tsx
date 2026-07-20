@@ -1,0 +1,560 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import type { ConsentMechanism, Meeting, MeetingMode } from "@collective/shared";
+import {
+  ApiError,
+  createMeeting,
+  patchMeetingTitle,
+  postChunk,
+  postConsent,
+  postObjection,
+  startMeeting,
+  stopMeeting,
+} from "../api";
+import { subscribeSse } from "../sse";
+import { blobToBase64, playConsentTone } from "../lib/audio";
+import { fmtClock } from "../lib/format";
+import { useNote } from "../lib/useNote";
+import { NotesEditor } from "../components/NotesEditor";
+import { Waveform } from "../components/Waveform";
+
+type Phase = "setup" | "consent" | "recording" | "paused" | "stopping";
+
+interface CaptionLine {
+  key: string;
+  cluster: string;
+  text: string;
+  interim: boolean;
+}
+
+const ANNOUNCEMENT_SCRIPT = "Quick note: I'm recording this meeting for notes — any objection?";
+const CHUNK_MS = 3000;
+
+/* ------------------------- live transcript view ------------------------- */
+
+function LiveTranscript({ lines }: { lines: CaptionLine[] }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const pinnedRef = useRef(true);
+  const [showJump, setShowJump] = useState(false);
+  const announceRef = useRef({ last: 0, queued: "" });
+  const [announcement, setAnnouncement] = useState("");
+
+  // Stable "Speaker n" numbering by first appearance.
+  const clusterOrder = useMemo(() => {
+    const order: string[] = [];
+    for (const l of lines) if (!order.includes(l.cluster)) order.push(l.cluster);
+    return order;
+  }, [lines]);
+
+  // Group consecutive lines by cluster into speaker blocks.
+  const blocks = useMemo(() => {
+    const out: Array<{ cluster: string; lines: CaptionLine[] }> = [];
+    for (const l of lines) {
+      const last = out[out.length - 1];
+      if (last && last.cluster === l.cluster) last.lines.push(l);
+      else out.push({ cluster: l.cluster, lines: [l] });
+    }
+    return out;
+  }, [lines]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el && pinnedRef.current) el.scrollTop = el.scrollHeight;
+  }, [lines]);
+
+  // Rate-limited screen-reader announcements for finalized lines.
+  useEffect(() => {
+    const last = lines.filter((l) => !l.interim).pop();
+    if (!last) return;
+    const state = announceRef.current;
+    state.queued = last.text;
+    const now = Date.now();
+    if (now - state.last > 4000) {
+      state.last = now;
+      setAnnouncement(state.queued);
+    }
+  }, [lines]);
+
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const pinned = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+    pinnedRef.current = pinned;
+    setShowJump(!pinned);
+  };
+
+  const jumpToLive = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    pinnedRef.current = true;
+    setShowJump(false);
+    el.scrollTop = el.scrollHeight;
+  };
+
+  return (
+    <div className="live-transcript-wrap">
+      <div className="live-transcript" ref={scrollRef} onScroll={onScroll}>
+        {blocks.length === 0 && (
+          <p className="live-transcript-empty">Live transcript appears here as people speak.</p>
+        )}
+        {blocks.map((b, i) => (
+          <div className="live-block" key={`${b.cluster}-${i}`}>
+            <span className="speaker-chip speaker-chip-unknown speaker-chip-enter">
+              Speaker {clusterOrder.indexOf(b.cluster) + 1}
+            </span>
+            <div className="live-block-lines">
+              {b.lines.map((l) => (
+                <p key={l.key} className={`caption${l.interim ? " caption-interim" : ""}`}>
+                  {l.text}
+                </p>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      {showJump && (
+        <button type="button" className="jump-live-pill" onClick={jumpToLive}>
+          Jump to live
+        </button>
+      )}
+      <div className="visually-hidden" aria-live="polite">
+        {announcement}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------ main page ------------------------------- */
+
+export function CapturePage() {
+  const navigate = useNavigate();
+  const [phase, setPhase] = useState<Phase>("setup");
+  const [mode, setMode] = useState<MeetingMode>("virtual_desktop");
+  const [title, setTitle] = useState("");
+  const [meeting, setMeeting] = useState<Meeting | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [lines, setLines] = useState<CaptionLine[]>([]);
+  const [elapsed, setElapsed] = useState(0);
+  const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [objectionArmed, setObjectionArmed] = useState(false);
+
+  const note = useNote(meeting?.id ?? null);
+
+  const recRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const ctxRef = useRef<AudioContext | null>(null);
+  const seqRef = useRef(0);
+  const pendingRef = useRef<Array<Promise<unknown>>>([]);
+  const sseAbortRef = useRef<AbortController | null>(null);
+  const runStartRef = useRef(0);
+  const accumulatedRef = useRef(0);
+  const leavingRef = useRef(false);
+
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
+
+  const consentMechanisms = useMemo(
+    () => new Set<ConsentMechanism>((meeting?.consent ?? []).map((c) => c.mechanism)),
+    [meeting],
+  );
+
+  const cleanup = useCallback(() => {
+    sseAbortRef.current?.abort();
+    sseAbortRef.current = null;
+    const rec = recRef.current;
+    if (rec && rec.state !== "inactive") rec.stop();
+    recRef.current = null;
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    void ctxRef.current?.close().catch(() => {});
+    ctxRef.current = null;
+  }, []);
+
+  useEffect(() => cleanup, [cleanup]);
+
+  // Elapsed timer, pause-aware.
+  useEffect(() => {
+    if (phase !== "recording") return;
+    const t = window.setInterval(() => {
+      setElapsed(accumulatedRef.current + (Date.now() - runStartRef.current));
+    }, 500);
+    return () => window.clearInterval(t);
+  }, [phase]);
+
+  const elapsedNow = () =>
+    phaseRef.current === "recording"
+      ? accumulatedRef.current + (Date.now() - runStartRef.current)
+      : accumulatedRef.current;
+
+  /* ------------------------------ setup ------------------------------- */
+
+  const proceedToConsent = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const m = await createMeeting({ title: title.trim() || undefined, mode });
+      setMeeting(m);
+      if (m.title) setTitle(m.title);
+      setPhase("consent");
+    } catch {
+      setError("Couldn't create the meeting. Check the dev server and try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /* ----------------------------- consent ------------------------------ */
+
+  const recordConsent = async (mechanism: ConsentMechanism) => {
+    if (!meeting) return;
+    if (mechanism === "audible_tone") playConsentTone();
+    try {
+      const m = await postConsent(meeting.id, mechanism);
+      setMeeting(m);
+    } catch {
+      setError("Couldn't record the consent step. Try again.");
+    }
+  };
+
+  const onCaption = useCallback((data: unknown) => {
+    if (!data || typeof data !== "object") return;
+    const d = data as { cluster?: string; text?: string; interim?: boolean; seq?: number; id?: string };
+    if (typeof d.text !== "string" || d.text.length === 0) return;
+    const key = d.id ?? (d.seq !== undefined ? `seq-${d.seq}` : `t-${Date.now()}-${Math.random()}`);
+    const line: CaptionLine = {
+      key,
+      cluster: d.cluster ?? "A",
+      text: d.text,
+      interim: d.interim === true,
+    };
+    setLines((prev) => {
+      const idx = prev.findIndex((l) => l.key === key);
+      if (idx >= 0) {
+        const next = prev.slice();
+        next[idx] = line;
+        return next;
+      }
+      return [...prev, line];
+    });
+  }, []);
+
+  const beginRecording = async (m: Meeting) => {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    streamRef.current = stream;
+
+    const audioCtx = new AudioContext();
+    ctxRef.current = audioCtx;
+    const source = audioCtx.createMediaStreamSource(stream);
+    const an = audioCtx.createAnalyser();
+    an.fftSize = 2048;
+    an.smoothingTimeConstant = 0.8;
+    source.connect(an);
+    setAnalyser(an);
+
+    const mime = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find(
+      (t) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(t),
+    );
+    const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+    rec.ondataavailable = (ev: BlobEvent) => {
+      if (ev.data.size === 0) return;
+      const seq = seqRef.current++;
+      pendingRef.current.push(
+        blobToBase64(ev.data)
+          .then((b64) => postChunk(m.id, seq, b64))
+          .catch(() => {}),
+      );
+    };
+    rec.start(CHUNK_MS);
+    recRef.current = rec;
+
+    const abort = new AbortController();
+    sseAbortRef.current = abort;
+    subscribeSse(
+      `/meetings/${m.id}/live`,
+      {
+        onEvent: (event, data) => {
+          if (event === "caption") onCaption(data);
+          else if (event === "status") {
+            const s = (data as { status?: string })?.status;
+            if ((s === "processing" || s === "ready") && !leavingRef.current) {
+              // Stopped from elsewhere — follow the meeting to its record.
+              leavingRef.current = true;
+              cleanup();
+              navigate(`/m/${m.id}`);
+            }
+          }
+        },
+      },
+      abort.signal,
+    );
+
+    accumulatedRef.current = 0;
+    runStartRef.current = Date.now();
+    setPhase("recording");
+  };
+
+  const start = async () => {
+    if (!meeting) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const m = await startMeeting(meeting.id);
+      setMeeting(m);
+      await beginRecording(m);
+    } catch (err) {
+      if (err instanceof ApiError && (err.status === 409 || err.code === "consent_required")) {
+        setError("This org's consent policy needs more steps before capture can start.");
+      } else if (err instanceof DOMException && err.name === "NotAllowedError") {
+        setError("Microphone access is needed to capture. Allow the mic, then try again.");
+      } else {
+        setError("Couldn't start capture. Try again.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /* ---------------------------- recording ------------------------------ */
+
+  const pause = () => {
+    const rec = recRef.current;
+    if (!rec || rec.state !== "recording") return;
+    rec.pause();
+    accumulatedRef.current += Date.now() - runStartRef.current;
+    setElapsed(accumulatedRef.current);
+    setPhase("paused");
+  };
+
+  const resume = () => {
+    const rec = recRef.current;
+    if (!rec || rec.state !== "paused") return;
+    rec.resume();
+    runStartRef.current = Date.now();
+    setPhase("recording");
+  };
+
+  const addMarker = () => {
+    note.appendLine(`[t=${Math.round(elapsedNow())}] Marker`);
+  };
+
+  const stop = async () => {
+    if (!meeting || leavingRef.current) return;
+    leavingRef.current = true;
+    setPhase("stopping");
+    sseAbortRef.current?.abort();
+    const rec = recRef.current;
+    if (rec && rec.state !== "inactive") {
+      await new Promise<void>((resolve) => {
+        rec.onstop = () => resolve();
+        rec.stop();
+      });
+    }
+    await Promise.allSettled(pendingRef.current);
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    void ctxRef.current?.close().catch(() => {});
+    try {
+      await stopMeeting(meeting.id);
+    } catch {
+      /* the record still exists; detail will show its state */
+    }
+    navigate(`/m/${meeting.id}`);
+  };
+
+  const objection = async () => {
+    if (!meeting || leavingRef.current) return;
+    if (!objectionArmed) {
+      setObjectionArmed(true);
+      return;
+    }
+    leavingRef.current = true;
+    setPhase("stopping");
+    cleanup();
+    try {
+      await postObjection(meeting.id);
+    } catch {
+      /* fall through to the record */
+    }
+    navigate(`/m/${meeting.id}`);
+  };
+
+  const saveTitle = async () => {
+    if (!meeting) return;
+    const next = title.trim();
+    if (!next || next === meeting.title) return;
+    setMeeting({ ...meeting, title: next });
+    try {
+      const updated = await patchMeetingTitle(meeting.id, next);
+      if (updated) setMeeting(updated);
+    } catch {
+      /* keep the optimistic title */
+    }
+  };
+
+  const isLive = phase === "recording" || phase === "paused";
+
+  /* ------------------------------ render ------------------------------- */
+
+  return (
+    <main className={`capture-page${isLive ? " capture-live" : ""}`}>
+      <header className="capture-header">
+        {!isLive && phase !== "stopping" && (
+          <button type="button" className="btn-quiet" onClick={() => navigate("/")}>
+            ← Back
+          </button>
+        )}
+        <label className="visually-hidden" htmlFor="capture-title">
+          Meeting title
+        </label>
+        <input
+          id="capture-title"
+          className="capture-title-input"
+          placeholder="Untitled meeting"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onBlur={() => void saveTitle()}
+        />
+        {isLive && (
+          <>
+            <span className="capture-timer mono" aria-label="Elapsed time">
+              {fmtClock(elapsed)}
+            </span>
+            <span className="consent-chip consent-chip-ok">✓ Consent noted</span>
+            <span className={`record-dot-wrap${phase === "paused" ? " record-paused" : ""}`}>
+              <span className="record-dot" aria-hidden="true" />
+              <span className="visually-hidden">{phase === "paused" ? "Paused" : "Recording"}</span>
+            </span>
+          </>
+        )}
+      </header>
+
+      {phase === "setup" && (
+        <section className="capture-setup">
+          <h1 className="capture-setup-headline">Start a capture</h1>
+          <div className="segmented" role="radiogroup" aria-label="Meeting mode">
+            <button
+              type="button"
+              role="radio"
+              aria-checked={mode === "virtual_desktop"}
+              className={mode === "virtual_desktop" ? "seg-on" : ""}
+              onClick={() => setMode("virtual_desktop")}
+            >
+              Virtual meeting
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={mode === "in_person"}
+              className={mode === "in_person" ? "seg-on" : ""}
+              onClick={() => setMode("in_person")}
+            >
+              In person
+            </button>
+          </div>
+          <button type="button" className="btn" onClick={() => void proceedToConsent()} disabled={busy}>
+            Continue to consent
+          </button>
+          {error && (
+            <p className="field-error" role="alert">
+              {error}
+            </p>
+          )}
+        </section>
+      )}
+
+      {isLive && <Waveform analyser={analyser} paused={phase === "paused"} />}
+
+      {(isLive || phase === "stopping") && (
+        <div className="capture-body">
+          <LiveTranscript lines={lines} />
+          <aside className={`notes-pane${notesOpen ? " notes-pane-open" : ""}`}>
+            <NotesEditor body={note.body} onChange={note.setBody} saveState={note.saveState} rows={14} />
+          </aside>
+        </div>
+      )}
+
+      {isLive && (
+        <div className="capture-controls">
+          {phase === "recording" ? (
+            <button type="button" className="btn-quiet" onClick={pause}>
+              Pause
+            </button>
+          ) : (
+            <button type="button" className="btn-quiet" onClick={resume}>
+              Resume
+            </button>
+          )}
+          <button type="button" className="btn-quiet" onClick={addMarker}>
+            ⚑ Flag moment
+          </button>
+          <button type="button" className="btn btn-stop" onClick={() => void stop()}>
+            Stop
+          </button>
+          <button
+            type="button"
+            className={`btn-quiet btn-objection${objectionArmed ? " armed" : ""}`}
+            onClick={() => void objection()}
+          >
+            {objectionArmed ? "Tap again — stops & deletes audio" : "Someone objected"}
+          </button>
+          <button
+            type="button"
+            className="btn-quiet notes-toggle"
+            aria-expanded={notesOpen}
+            onClick={() => setNotesOpen((v) => !v)}
+          >
+            {notesOpen ? "Hide notes" : "Notes"}
+          </button>
+        </div>
+      )}
+
+      {phase === "stopping" && <p className="capture-stopping">Wrapping up — saving your capture…</p>}
+
+      {phase === "consent" && meeting && (
+        <div className="consent-scrim" role="presentation">
+          <section className="consent-sheet" role="dialog" aria-modal="true" aria-label="Recording consent">
+            <h2>Before you record</h2>
+            <p className="consent-lede">Say this out loud to the room or the call:</p>
+            <blockquote className="consent-script">“{ANNOUNCEMENT_SCRIPT}”</blockquote>
+            <div className="consent-actions">
+              <button
+                type="button"
+                className={`btn-quiet consent-step${consentMechanisms.has("verbal_announcement_attested") ? " done" : ""}`}
+                onClick={() => void recordConsent("verbal_announcement_attested")}
+              >
+                {consentMechanisms.has("verbal_announcement_attested") ? "✓ Announced" : "I announced it"}
+              </button>
+              <button
+                type="button"
+                className={`btn-quiet consent-step${consentMechanisms.has("audible_tone") ? " done" : ""}`}
+                onClick={() => void recordConsent("audible_tone")}
+              >
+                {consentMechanisms.has("audible_tone") ? "✓ Tone played" : "Play tone"}
+              </button>
+            </div>
+            <button
+              type="button"
+              className="btn btn-block"
+              disabled={busy || consentMechanisms.size === 0}
+              onClick={() => void start()}
+            >
+              Start capture
+            </button>
+            {consentMechanisms.size === 0 && (
+              <p className="consent-hint">Record at least one consent step to start.</p>
+            )}
+            {error && (
+              <p className="field-error" role="alert">
+                {error}
+              </p>
+            )}
+            <button type="button" className="btn-quiet consent-cancel" onClick={() => navigate("/")}>
+              Cancel — back to meetings
+            </button>
+          </section>
+        </div>
+      )}
+    </main>
+  );
+}

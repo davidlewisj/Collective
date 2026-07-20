@@ -1,0 +1,21 @@
+{
+  "name": "collective",
+  "private": true,
+  "version": "0.1.0",
+  "description": "HIPAA-compliant meeting transcription and notes for healthcare teams — no meeting bot.",
+  "workspaces": [
+    "packages/*",
+    "apps/server",
+    "apps/web"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "dev:server": "npm run dev --workspace apps/server",
+    "dev:web": "npm run dev --workspace apps/web"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
