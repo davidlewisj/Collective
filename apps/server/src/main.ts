@@ -12,6 +12,7 @@ import {
   loadAuditEvents,
 } from "./persist.js";
 import { MsGraph, graphConfigFromEnv } from "./msgraph.js";
+import { OAuthProvider, oauthConfigFromEnv } from "./oauth.js";
 import { makeRelayFactory } from "./relay.js";
 import { startRetentionWorker } from "./retention.js";
 import { applyEnvOverrides, createDb, seedUsers } from "./store.js";
@@ -54,7 +55,9 @@ const audioStore = new DiskAudioStore(dataDir);
 const upstreamFactory = makeRelayFactory();
 const graphCfg = graphConfigFromEnv();
 const graph = graphCfg ? new MsGraph(graphCfg) : null;
-const app = buildApp({ db, audit, transcriber, insight, audioStore, upstreamFactory, graph });
+const oauthCfg = oauthConfigFromEnv();
+const oauth = new OAuthProvider(db, audit, oauthCfg);
+const app = buildApp({ db, audit, transcriber, insight, audioStore, upstreamFactory, graph, oauth });
 snapshot.startAutosave();
 startRetentionWorker(db, audit, audioStore);
 
@@ -79,6 +82,7 @@ app
       `  data: ${dataDir} (${restored ? `restored ${db.meetings.size} meeting(s), ${priorEvents.length} audit events` : "fresh"})`,
     );
     console.log(`  microsoft sign-in: ${graph ? "on (Entra ID)" : "off — set GRAPH_TENANT_ID/GRAPH_CLIENT_ID/GRAPH_CLIENT_SECRET"}`);
+    console.log(`  mcp oauth: issuer ${oauthCfg.issuer} (set COLLECTIVE_PUBLIC_URL for a public deploy)`);
     console.log(`  dev users: dana@ | omar@ | priya@ | casey@  (collective.dev)`);
   })
   .catch((err) => {

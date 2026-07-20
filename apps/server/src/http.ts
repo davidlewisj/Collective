@@ -31,6 +31,7 @@ import {
 import { search } from "./search.js";
 import { Db, linkOrProvisionUser, newId, userByEmail } from "./store.js";
 import { MsGraph } from "./msgraph.js";
+import { OAUTH_SCOPES, OAuthProvider } from "./oauth.js";
 import { Insight } from "./adapters/insight.js";
 import { Transcriber } from "./adapters/transcriber.js";
 import { AudioStore, MemoryAudioStore } from "./persist.js";
@@ -51,6 +52,8 @@ export interface AppDeps {
   icsFetcher?: IcsFetcher;
   /** Microsoft Entra sign-in + Graph calendar (msgraph.ts); null = not configured. */
   graph?: MsGraph | null;
+  /** MCP OAuth 2.1 AS + resource server (oauth.ts); null = not configured. */
+  oauth?: OAuthProvider | null;
   /** Where the web app lives, for post-sign-in redirects. */
   webOrigin?: string;
 }
@@ -58,12 +61,18 @@ export interface AppDeps {
 declare module "fastify" {
   interface FastifyRequest {
     user: User;
+    /** Granted MCP scopes when authenticated for /mcp (oauth.ts). */
+    mcpScopes?: string[];
   }
 }
 
 function fail(reply: FastifyReply, code: number, error: string): never {
   reply.code(code);
   throw Object.assign(new Error(error), { statusCode: code, handled: true });
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
 
 export function buildApp(deps: AppDeps): FastifyInstance {
@@ -83,6 +92,20 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const code = (err as { statusCode?: number }).statusCode ?? 500;
     reply.code(code).send({ error: err.message });
   });
+
+  // The OAuth token endpoint receives application/x-www-form-urlencoded
+  // bodies (RFC 6749 §4.1.3); parse them into a flat string map.
+  app.addContentTypeParser(
+    "application/x-www-form-urlencoded",
+    { parseAs: "string" },
+    (_req, body, done) => {
+      try {
+        done(null, Object.fromEntries(new URLSearchParams(body as string)));
+      } catch (err) {
+        done(err as Error);
+      }
+    },
+  );
 
   // CORS: the packaged desktop shell serves the UI from its own loopback
   // origin and calls this server cross-origin. Allow loopback origins by
@@ -124,6 +147,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   /* ------------------- Microsoft Entra sign-in (ID-1) ------------------ */
 
   const graph = deps.graph ?? null;
+  const oauth = deps.oauth ?? null;
   const webOrigin = (deps.webOrigin ?? process.env.WEB_ORIGIN ?? "http://localhost:5173").replace(/\/+$/, "");
   const oauthStates = new Map<string, number>(); // state -> createdAt (CSRF)
 
@@ -191,7 +215,90 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     }
   };
 
-  const PUBLIC = new Set(["/auth/dev-login", "/health", "/auth/config", "/auth/microsoft", "/auth/callback"]);
+  /* ------------- MCP OAuth 2.1 (spec §6.4): AS + discovery ------------- */
+
+  // RFC 9728 protected-resource metadata + RFC 8414 AS metadata. Served at
+  // the bare well-known path and the resource-suffixed variant, since MCP
+  // clients probe both. Absent when OAuth isn't configured.
+  const prMetadata = async (_req: FastifyRequest, reply: FastifyReply) =>
+    oauth ? oauth.protectedResourceMetadata() : fail(reply, 404, "not found");
+  const asMetadata = async (_req: FastifyRequest, reply: FastifyReply) =>
+    oauth ? oauth.authorizationServerMetadata() : fail(reply, 404, "not found");
+  app.get("/.well-known/oauth-protected-resource", prMetadata);
+  app.get("/.well-known/oauth-protected-resource/mcp", prMetadata);
+  app.get("/.well-known/oauth-authorization-server", asMetadata);
+  app.get("/.well-known/oauth-authorization-server/mcp", asMetadata);
+
+  // Authorization endpoint: validate, then hand the browser to the web
+  // consent page. Bad client/redirect can't be safely bounced back, so they
+  // render a page; recoverable errors redirect to the client per OAuth.
+  app.get("/oauth/authorize", async (req, reply) => {
+    if (!oauth) return fail(reply, 404, "oauth not configured");
+    const result = oauth.beginAuthorize(req.query as Record<string, string | undefined>);
+    if (result.kind === "consent") return reply.redirect(result.consentUrl);
+    if (result.kind === "redirect_error") return reply.redirect(result.url);
+    reply.code(400).type("text/html");
+    return `<!doctype html><meta charset="utf-8"><title>Collective — connection error</title><body style="font-family:system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem;line-height:1.5"><h1>Can't start this connection</h1><p>${escapeHtml(result.message)}</p></body>`;
+  });
+
+  // Consent page data (rid is unguessable and short-lived, so this is public).
+  app.get("/oauth/authorize/info", async (req, reply) => {
+    if (!oauth) return fail(reply, 404, "oauth not configured");
+    const info = oauth.authorizeInfo((req.query as { rid?: string }).rid ?? "");
+    if (!info) return fail(reply, 404, "request expired");
+    return info;
+  });
+
+  // Consent decision — requires the signed-in user (not public); the code is
+  // minted under THAT user's identity.
+  app.post("/oauth/authorize/decision", async (req, reply) => {
+    if (!oauth) return fail(reply, 404, "oauth not configured");
+    const body = z.object({ rid: z.string(), approve: z.boolean() }).parse(req.body);
+    const result = oauth.decide(body.rid, req.user, body.approve);
+    if (!result) return fail(reply, 404, "request expired");
+    return result;
+  });
+
+  // Token endpoint: authorization_code (PKCE) + refresh_token grants.
+  app.post("/oauth/token", async (req, reply) => {
+    if (!oauth) return fail(reply, 404, "oauth not configured");
+    const params = (req.body ?? {}) as Record<string, string | undefined>;
+    let basicAuth: { id: string; secret: string } | undefined;
+    const authz = req.headers.authorization ?? "";
+    if (authz.startsWith("Basic ")) {
+      const decoded = Buffer.from(authz.slice(6), "base64").toString("utf8");
+      const idx = decoded.indexOf(":");
+      if (idx >= 0) {
+        basicAuth = {
+          id: decodeURIComponent(decoded.slice(0, idx)),
+          secret: decodeURIComponent(decoded.slice(idx + 1)),
+        };
+      }
+    }
+    reply.header("cache-control", "no-store");
+    const result = oauth.token(params, basicAuth);
+    if (!result.ok) {
+      return reply
+        .code(result.status)
+        .send({ error: result.error, ...(result.desc ? { error_description: result.desc } : {}) });
+    }
+    return result.body;
+  });
+
+  const PUBLIC = new Set([
+    "/auth/dev-login",
+    "/health",
+    "/auth/config",
+    "/auth/microsoft",
+    "/auth/callback",
+    "/.well-known/oauth-protected-resource",
+    "/.well-known/oauth-protected-resource/mcp",
+    "/.well-known/oauth-authorization-server",
+    "/.well-known/oauth-authorization-server/mcp",
+    "/oauth/authorize",
+    "/oauth/authorize/info",
+    "/oauth/token",
+  ]);
   app.addHook("preHandler", async (req: FastifyRequest, reply: FastifyReply) => {
     const path = req.url.split("?")[0]!;
     if (PUBLIC.has(path)) return;
@@ -200,17 +307,42 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const wsToken = path.endsWith("/stream") ? ((req.query as { token?: string }).token ?? "") : "";
     const token = (req.headers.authorization ?? "").replace(/^Bearer /, "") || wsToken;
 
-    // Long-lived connector tokens authenticate the MCP surface ONLY (the
-    // Claude connector can't re-login every 15 idle minutes); they carry no
-    // access to any other route and are revocable in Settings.
+    // The MCP surface accepts three credential kinds; none grants access to
+    // any other route. On failure it answers with the RFC 9728 pointer so an
+    // OAuth client can discover how to authenticate.
     if (path === "/mcp") {
+      const mcpUnauth = (): never => {
+        if (oauth) {
+          reply.header("WWW-Authenticate", `Bearer resource_metadata="${oauth.protectedResourceMetadataUrl()}"`);
+        }
+        return fail(reply, 401, "invalid_token");
+      };
+      // 1. OAuth 2.1 access token (claude.ai connector — spec §6.4).
+      const grant = oauth?.verifyAccessToken(token);
+      if (grant) {
+        req.user = grant.user;
+        req.mcpScopes = grant.scopes;
+        return;
+      }
+      // 2. Long-lived connector token (Claude Desktop via mcp-remote).
       const ct = db.connectorTokens.get(token);
       if (ct) {
         const user = db.users.get(ct.userId);
-        if (!user || user.deactivated) return fail(reply, 401, "unauthenticated");
+        if (!user || user.deactivated) return mcpUnauth();
         req.user = user;
+        req.mcpScopes = [...OAUTH_SCOPES];
         return;
       }
+      // 3. A normal signed-in session (same-origin / in-app use).
+      const s = db.sessions.get(token);
+      const sUser = s && db.users.get(s.userId);
+      if (s && sUser && !sUser.deactivated && Date.now() - s.lastSeenAt <= db.idleMinutes * 60 * 1000) {
+        s.lastSeenAt = Date.now();
+        req.user = sUser;
+        req.mcpScopes = [...OAUTH_SCOPES];
+        return;
+      }
+      return mcpUnauth();
     }
 
     const session = db.sessions.get(token);
@@ -675,6 +807,38 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     target.role = role;
     audit.emit({ actorUserId: req.user.id, action: "admin.role_changed", detail: `${id} → ${role}` });
     return { user: target };
+  });
+
+  /* -------- MCP OAuth client allowlist (org_admin; spec §6.4) --------- */
+
+  app.post("/admin/oauth-clients", async (req, reply) => {
+    adminOnly(req, reply);
+    if (!oauth) return fail(reply, 404, "oauth not configured");
+    const body = z
+      .object({
+        name: z.string().min(1).max(120),
+        redirectUris: z.array(z.string().url()).min(1).max(10),
+      })
+      .parse(req.body);
+    const { client, clientSecret } = oauth.registerClient(body, req.user.id);
+    // clientSecret is returned once and never stored in the clear.
+    return {
+      client: { clientId: client.clientId, name: client.name, redirectUris: client.redirectUris, createdAt: client.createdAt },
+      clientSecret,
+    };
+  });
+
+  app.get("/admin/oauth-clients", async (req, reply) => {
+    adminOnly(req, reply);
+    return { clients: oauth ? oauth.listClients() : [] };
+  });
+
+  app.delete("/admin/oauth-clients/:clientId", async (req, reply) => {
+    adminOnly(req, reply);
+    if (!oauth) return fail(reply, 404, "oauth not configured");
+    const { clientId } = req.params as { clientId: string };
+    if (!oauth.revokeClient(clientId, req.user.id)) return fail(reply, 404, "unknown client");
+    return { ok: true };
   });
 
   app.get("/admin/baa-registry", async (req, reply) => (adminOnly(req, reply), { baa: db.baa }));

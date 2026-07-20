@@ -83,29 +83,57 @@ export function mcpGetActionItems(db: Db, user: User) {
 
 /* -------------------------- transport wiring --------------------------- */
 
-function buildMcpServer(db: Db, audit: AuditLog, user: User): McpServer {
+/** Read tier each tool requires, mapped to an OAuth scope (spec §6.4). */
+export const TOOL_SCOPE: Record<string, string> = {
+  search_meetings: "meetings.search",
+  list_meetings: "meetings.read",
+  get_meeting: "meetings.read",
+  get_transcript: "transcripts.read",
+  get_action_items: "meetings.read",
+};
+
+/** Whether a granted scope set permits a given MCP tool. */
+export function hasToolScope(scopes: string[], tool: string): boolean {
+  const required = TOOL_SCOPE[tool];
+  return required ? scopes.includes(required) : false;
+}
+
+function buildMcpServer(db: Db, audit: AuditLog, user: User, scopes: string[]): McpServer {
   const server = new McpServer({ name: "collective", version: "0.1.0" });
   const log = (tool: string, detail?: string) =>
     audit.emit({ actorUserId: user.id, action: `mcp.${tool}`, detail });
   const json = (data: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] });
+  // Scope check is defense-in-depth in front of the per-caller ACL — a token
+  // granted only meetings.search can never reach transcript text, even for
+  // meetings the user could otherwise open.
+  const denied = (tool: string) =>
+    json({ error: "insufficient_scope", required: TOOL_SCOPE[tool] });
+  const has = (tool: string) => hasToolScope(scopes, tool);
 
   server.tool(
     "search_meetings",
     "Search the caller's accessible meeting archive (titles, summaries, transcripts, own notes). Returns ranked hits with snippets.",
     { query: z.string() },
-    async ({ query }) => (log("search_meetings", query), json(mcpSearchMeetings(db, user, query))),
+    async ({ query }) => {
+      if (!has("search_meetings")) return denied("search_meetings");
+      return log("search_meetings", query), json(mcpSearchMeetings(db, user, query));
+    },
   );
   server.tool(
     "list_meetings",
     "List accessible meetings (titles and dates only).",
     {},
-    async () => (log("list_meetings"), json(mcpListMeetings(db, user))),
+    async () => {
+      if (!has("list_meetings")) return denied("list_meetings");
+      return log("list_meetings"), json(mcpListMeetings(db, user));
+    },
   );
   server.tool(
     "get_meeting",
     "Fetch one meeting's metadata, summary, and action items — the cheapest sufficient payload.",
     { meetingId: z.string() },
     async ({ meetingId }) => {
+      if (!has("get_meeting")) return denied("get_meeting");
       log("get_meeting", meetingId);
       const m = mcpGetMeeting(db, user, meetingId);
       return m ? json(m) : json({ error: "not found or not accessible" });
@@ -116,6 +144,7 @@ function buildMcpServer(db: Db, audit: AuditLog, user: User): McpServer {
     "Fetch a meeting's attributed transcript. Requires transcript access.",
     { meetingId: z.string() },
     async ({ meetingId }) => {
+      if (!has("get_transcript")) return denied("get_transcript");
       log("get_transcript", meetingId);
       const t = mcpGetTranscript(db, user, meetingId);
       return t ? json(t) : json({ error: "not found or not accessible" });
@@ -125,7 +154,10 @@ function buildMcpServer(db: Db, audit: AuditLog, user: User): McpServer {
     "get_action_items",
     "List action items across the caller's accessible meetings.",
     {},
-    async () => (log("get_action_items"), json(mcpGetActionItems(db, user))),
+    async () => {
+      if (!has("get_action_items")) return denied("get_action_items");
+      return log("get_action_items"), json(mcpGetActionItems(db, user));
+    },
   );
   return server;
 }
@@ -133,7 +165,8 @@ function buildMcpServer(db: Db, audit: AuditLog, user: User): McpServer {
 export function registerMcp(app: FastifyInstance, deps: AppDeps): void {
   app.post("/mcp", async (req, reply) => {
     // Stateless Streamable HTTP: fresh server + transport per request.
-    const server = buildMcpServer(deps.db, deps.audit, req.user);
+    const scopes = req.mcpScopes ?? [];
+    const server = buildMcpServer(deps.db, deps.audit, req.user, scopes);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     reply.hijack();
     req.raw.on("close", () => void transport.close());

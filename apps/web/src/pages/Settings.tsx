@@ -122,15 +122,15 @@ function ConnectClaudeCard() {
 
   return (
     <section className="admin-card admin-card-wide">
-      <h2 className="section-heading">Connect Claude</h2>
+      <h2 className="section-heading">Connect Claude Desktop</h2>
       <p className="admin-hint">
         Let Claude answer questions from your meeting archive ("what did we decide about the intake forms?").
         Generate a connector token, add the snippet below to Claude Desktop's config file
         (%APPDATA%\Claude\claude_desktop_config.json on Windows), restart Claude Desktop, and ask away. The token
         only reaches the archive tools — never audio, never other people's notes — every request is permission-
-        checked and audited, and patient-info-flagged meetings stay hidden per the BAA registry. Claude on the
-        web (claude.ai) needs this server to be reachable from the internet, which comes with the hosted
-        deployment.
+        checked and audited, and patient-info-flagged meetings stay hidden per the BAA registry. For Claude on
+        the web (claude.ai), an org admin sets up a connector under Admin → Claude connectors, and this server
+        must be reachable from the internet (part of the hosted deployment).
       </p>
       {freshToken ? (
         <>

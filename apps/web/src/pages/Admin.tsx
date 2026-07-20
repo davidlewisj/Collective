@@ -8,13 +8,17 @@ import type {
   RetentionPolicy,
 } from "@collective/shared";
 import {
+  createOAuthClient,
+  deleteOAuthClient,
   getAudit,
   getBaaRegistry,
   getConsentPolicy,
   getRetention,
+  listOAuthClients,
   putBaaRegistry,
   putConsentPolicy,
   putRetention,
+  type OAuthClient,
 } from "../api";
 import { useAuth } from "../auth";
 import { useUsers } from "../lib/useUsers";
@@ -269,6 +273,123 @@ function RetentionCard() {
   );
 }
 
+/* ---------------------- MCP connectors (OAuth clients) ------------------- */
+
+function ConnectorsCard() {
+  const [clients, setClients] = useState<OAuthClient[] | null>(null);
+  const [name, setName] = useState("Claude (claude.ai)");
+  const [redirects, setRedirects] = useState("https://claude.ai/api/mcp/auth_callback");
+  const [minted, setMinted] = useState<{ client: OAuthClient; clientSecret: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = () => {
+    listOAuthClients()
+      .then(setClients)
+      .catch(() => setClients([]));
+  };
+  useEffect(refresh, []);
+
+  const create = async () => {
+    const uris = redirects
+      .split(/\s+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (!name.trim() || uris.length === 0) {
+      setError("Give the connector a name and at least one redirect URL.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      setMinted(await createOAuthClient({ name: name.trim(), redirectUris: uris }));
+      refresh();
+    } catch {
+      setError("Couldn't create the connector. Check the redirect URLs are valid.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const revoke = async (clientId: string) => {
+    await deleteOAuthClient(clientId);
+    if (minted?.client.clientId === clientId) setMinted(null);
+    refresh();
+  };
+
+  return (
+    <section className="admin-card admin-card-wide">
+      <h2 className="section-heading">Claude connectors (claude.ai)</h2>
+      <p className="admin-hint">
+        Register an OAuth client so Claude on the web can connect to this workspace's archive. Create it here,
+        then in claude.ai add a custom connector pointing at <span className="mono">{`${window.location.origin}/mcp`}</span> and
+        paste in the client ID and secret. Each person still signs in as themselves and only sees what they're
+        allowed to; patient-info-flagged meetings stay hidden per the BAA registry. (Claude Desktop uses a
+        per-user token from Settings instead.)
+      </p>
+
+      {minted && (
+        <div className="connector-minted">
+          <p className="detail-muted">
+            Copy the secret now — it's shown once. Paste both into claude.ai's connector settings.
+          </p>
+          <div className="audit-scroll">
+            <pre className="mono connector-snippet">{`Client ID:     ${minted.client.clientId}
+Client secret: ${minted.clientSecret}
+Redirect URL:  ${minted.client.redirectUris.join(", ")}`}</pre>
+          </div>
+        </div>
+      )}
+
+      <div className="connector-form">
+        <label htmlFor="oauth-name">Connector name</label>
+        <input
+          id="oauth-name"
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          autoComplete="off"
+        />
+        <label htmlFor="oauth-redirects">Redirect URL(s)</label>
+        <input
+          id="oauth-redirects"
+          type="text"
+          value={redirects}
+          onChange={(e) => setRedirects(e.target.value)}
+          placeholder="https://claude.ai/api/mcp/auth_callback"
+          autoComplete="off"
+        />
+        <div className="admin-card-foot">
+          <button type="button" className="btn" disabled={busy} onClick={() => void create()}>
+            {busy ? "Creating…" : "Create connector"}
+          </button>
+          {error && (
+            <span className="field-error" role="alert">
+              {error}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {clients && clients.length > 0 && (
+        <ul className="connector-list">
+          {clients.map((c) => (
+            <li key={c.clientId} className="connector-list-row">
+              <div>
+                <span className="connector-list-name">{c.name}</span>
+                <span className="detail-muted mono"> · {c.clientId}</span>
+              </div>
+              <button type="button" className="btn-quiet" onClick={() => void revoke(c.clientId)}>
+                Revoke
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 /* --------------------------------- audit -------------------------------- */
 
 function AuditTable() {
@@ -343,11 +464,14 @@ export function AdminPage() {
       ) : (
         <>
           {isAdmin && (
-            <div className="admin-grid">
-              <BaaCard />
-              <ConsentCard />
-              <RetentionCard />
-            </div>
+            <>
+              <div className="admin-grid">
+                <BaaCard />
+                <ConsentCard />
+                <RetentionCard />
+              </div>
+              <ConnectorsCard />
+            </>
           )}
           <AuditTable />
         </>

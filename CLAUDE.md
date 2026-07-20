@@ -48,7 +48,7 @@ Dev users: `dana@` (org_admin) · `omar@` / `priya@` (members) · `casey@` (comp
 - **Auth**: Entra ID sign-in implemented (`msgraph.ts`, confidential-client flow; dev-login retained for tests/dev); remaining: JWKS signature verification, SCIM, device registry (issues #14–#15).
 - **Live captions**: mock SSE in `pipeline.ts` → AssemblyAI v3 WebSocket relay (IN-2).
 - **Desktop capture**: `apps/desktop` has loopback plumbing; per-process WASAPI + macOS Core Audio taps need native modules on real hardware (`docs/desktop-capture.md`).
-- **MCP**: works over Streamable HTTP with bearer auth; needs the OAuth 2.1 resource-server front (RFC 9728/8707) before claude.ai exposure (spec §6.4).
+- **MCP**: works over Streamable HTTP with bearer auth; the OAuth 2.1 AS/resource-server front (RFC 9728/8414 discovery, PKCE, RFC 8707 audience binding, allowlisted admin-minted clients, `oauth.ts`) is built + tested — claude.ai end-to-end just needs a public HTTPS deploy (`COLLECTIVE_PUBLIC_URL`) since Claude connects from Anthropic's cloud (spec §6.4).
 - **infra/policies/**: AWS SCPs + Bedrock logging guard, ready to attach per the README there.
 
 ## Process conventions
