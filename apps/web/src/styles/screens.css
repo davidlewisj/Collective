@@ -1027,3 +1027,33 @@
   border-bottom: var(--app-hairline) solid var(--c-mist);
   white-space: nowrap;
 }
+
+/* ------------------------------ crash screen ----------------------------- */
+
+.crash-screen {
+  max-width: 32em;
+  margin: 20vh auto 0;
+  padding: var(--space-5);
+  text-align: center;
+}
+.crash-headline {
+  font: var(--type-display);
+  color: var(--c-ink);
+  margin-bottom: var(--space-3);
+}
+.crash-copy {
+  font: var(--type-body);
+  color: var(--c-sage);
+  margin-bottom: var(--space-3);
+}
+.crash-detail {
+  font: var(--type-mono-sm);
+  color: var(--c-sage);
+  overflow-wrap: anywhere;
+  margin-bottom: var(--space-5);
+}
+.crash-actions {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-3);
+}
