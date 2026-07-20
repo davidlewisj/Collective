@@ -44,13 +44,13 @@ describe("retention & deletion (spec §2.6.4)", () => {
     const ended = Date.parse(ctx.db.meetings.get(id)!.endedAt!);
 
     // Past the audio clock, before the transcript clock.
-    let r = runRetentionSweep(ctx.db, ctx.audit, ended + (ctx.db.retention.audioDays + 1) * DAY);
+    let r = runRetentionSweep(ctx.db, ctx.audit, undefined, ended + (ctx.db.retention.audioDays + 1) * DAY);
     expect(r.audioPurged).toBe(1);
     expect(ctx.db.meetings.get(id)!.audioChunks).toBe(0);
     expect(ctx.db.meetings.get(id)!.status).toBe("ready");
 
     // Past the transcript clock → record deleted, cascade complete.
-    r = runRetentionSweep(ctx.db, ctx.audit, ended + (ctx.db.retention.transcriptDays + 1) * DAY);
+    r = runRetentionSweep(ctx.db, ctx.audit, undefined, ended + (ctx.db.retention.transcriptDays + 1) * DAY);
     expect(r.recordsDeleted).toBe(1);
     expect(ctx.db.utterances.has(id)).toBe(false);
 

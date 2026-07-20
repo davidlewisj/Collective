@@ -9,6 +9,18 @@ import { AuditEvent, ShareLayer } from "@collective/shared";
 
 export class AuditLog {
   private events: AuditEvent[] = [];
+  /** Optional durable sink — called once per emitted event (persist.ts). */
+  onEvent: ((event: AuditEvent) => void) | null = null;
+
+  /**
+   * Rebuild from a persisted journal. Verifies the chain; returns the index
+   * of the first tampered event, or -1 when intact. Tampered journals still
+   * load (evidence is preserved) — the caller decides how loudly to alarm.
+   */
+  hydrate(events: AuditEvent[]): number {
+    this.events = [...events];
+    return this.verifyChain();
+  }
 
   emit(e: {
     actorUserId: string;
@@ -27,6 +39,7 @@ export class AuditLog {
     const hash = createHash("sha256").update(prevHash + JSON.stringify(body)).digest("hex");
     const event: AuditEvent = { ...body, hash };
     this.events.push(event);
+    this.onEvent?.(event);
     return event;
   }
 

@@ -6,11 +6,17 @@
  * windows, backup expiry, and deletion certificates.
  */
 import { AuditLog } from "./audit.js";
+import { AudioStore } from "./persist.js";
 import { Db } from "./store.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 
-export function runRetentionSweep(db: Db, audit: AuditLog, now = Date.now()): { audioPurged: number; recordsDeleted: number } {
+export function runRetentionSweep(
+  db: Db,
+  audit: AuditLog,
+  audioStore?: AudioStore,
+  now = Date.now(),
+): { audioPurged: number; recordsDeleted: number } {
   let audioPurged = 0;
   let recordsDeleted = 0;
 
@@ -19,12 +25,14 @@ export function runRetentionSweep(db: Db, audit: AuditLog, now = Date.now()): { 
     const age = now - Date.parse(m.endedAt);
 
     if (m.audioChunks > 0 && age > db.retention.audioDays * DAY) {
+      audioStore?.delete(m.id);
       m.audioChunks = 0;
       audioPurged++;
       audit.emit({ actorUserId: "system_retention", action: "retention.audio_purged", meetingId: m.id, layer: "audio" });
     }
 
     if (age > db.retention.transcriptDays * DAY) {
+      audioStore?.delete(m.id);
       db.utterances.delete(m.id);
       for (const [k] of db.notes) if (k.startsWith(`${m.id}:`)) db.notes.delete(k);
       for (const [id, g] of db.shares) if (g.meetingId === m.id) db.shares.delete(id);
@@ -37,6 +45,6 @@ export function runRetentionSweep(db: Db, audit: AuditLog, now = Date.now()): { 
   return { audioPurged, recordsDeleted };
 }
 
-export function startRetentionWorker(db: Db, audit: AuditLog): NodeJS.Timeout {
-  return setInterval(() => runRetentionSweep(db, audit), 60 * 60 * 1000).unref() as unknown as NodeJS.Timeout;
+export function startRetentionWorker(db: Db, audit: AuditLog, audioStore?: AudioStore): NodeJS.Timeout {
+  return setInterval(() => runRetentionSweep(db, audit, audioStore), 60 * 60 * 1000).unref() as unknown as NodeJS.Timeout;
 }

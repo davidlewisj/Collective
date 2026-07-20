@@ -30,6 +30,7 @@ import { search } from "./search.js";
 import { Db, newId, userByEmail } from "./store.js";
 import { Insight } from "./adapters/insight.js";
 import { Transcriber } from "./adapters/transcriber.js";
+import { AudioStore, MemoryAudioStore } from "./persist.js";
 import { registerMcp } from "./mcp.js";
 
 export interface AppDeps {
@@ -37,6 +38,8 @@ export interface AppDeps {
   audit: AuditLog;
   transcriber: Transcriber;
   insight: Insight;
+  /** Defaults to in-memory; main.ts passes the disk store. */
+  audioStore?: AudioStore;
 }
 
 declare module "fastify" {
@@ -53,11 +56,11 @@ function fail(reply: FastifyReply, code: number, error: string): never {
 export function buildApp(deps: AppDeps): FastifyInstance {
   const { db, audit } = deps;
   const hub = new LiveHub();
-  const audioChunks = new Map<string, Buffer[]>();
+  const audioStore = deps.audioStore ?? new MemoryAudioStore();
   const pipeline: PipelineDeps = {
     ...deps,
     hub,
-    audioFor: (id) => Buffer.concat(audioChunks.get(id) ?? []),
+    audioFor: (id) => audioStore.read(id),
   };
 
   const app = Fastify({ bodyLimit: 25 * 1024 * 1024 });
@@ -230,13 +233,10 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     if (m.ownerUserId !== req.user.id) return fail(reply, 403, "owner only");
     if (m.status !== "recording") return fail(reply, 409, "not recording");
     const { seq, dataBase64 } = z.object({ seq: z.number().int(), dataBase64: z.string() }).parse(req.body);
-    const buf = Buffer.from(dataBase64, "base64");
-    const arr = audioChunks.get(m.id) ?? [];
-    arr.push(buf);
-    audioChunks.set(m.id, arr);
-    m.audioChunks = arr.length;
+    audioStore.append(m.id, Buffer.from(dataBase64, "base64"));
+    m.audioChunks += 1;
     liveCaptionOnChunk(pipeline, m, seq);
-    return { received: arr.length };
+    return { received: m.audioChunks };
   });
 
   app.get("/meetings/:id/live", async (req, reply) => {
@@ -284,7 +284,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     if (m.ownerUserId !== req.user.id) return fail(reply, 403, "owner only");
     m.status = "ready";
     m.endedAt = new Date().toISOString();
-    audioChunks.delete(m.id);
+    audioStore.delete(m.id);
     m.audioChunks = 0;
     db.utterances.delete(m.id);
     m.ai = {
@@ -366,9 +366,8 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const m = getMeeting(req, reply, (req.params as { id: string }).id);
     if (!can(db, req.user, "read", m, "audio")) return fail(reply, 403, "no audio access");
     audit.emit({ actorUserId: req.user.id, action: "audio.play", meetingId: m.id, layer: "audio" });
-    const buf = Buffer.concat(audioChunks.get(m.id) ?? []);
     reply.header("content-type", "audio/webm");
-    return reply.send(buf);
+    return reply.send(audioStore.read(m.id));
   });
 
   /* ------------------------------ sharing ------------------------------ */

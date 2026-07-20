@@ -22,7 +22,8 @@ Honest, story-level map of what exists in this repository versus the design spec
 | Retention clocks + deletion cascade | §2.6.4 | ✅ sweep tested — 🚧 soft-delete window, backup expiry, deletion certificates |
 | Session idle timeout | §2.6.1 | ✅ server-side — 🚧 client lock UX |
 | OIDC SSO (Entra ID), MFA, SCIM, device registry | §2.6.1 | 🚧 dev-login stands in; designs in issues #11–#15 |
-| Encryption at rest w/ per-entity KMS keys | §3.3 | 🚧 requires the AWS landing zone (PF-1..3); SCP guardrails already in `infra/policies/` |
+| Durable local persistence (meetings/transcripts/notes/shares/policies survive restarts; audio on disk; append-only audit journal chain-verified at boot) | §3.3 dev slice | ✅ behind the storage seam (`persist.ts`); sessions intentionally ephemeral |
+| Encryption at rest w/ per-entity KMS keys + Postgres/RLS + WORM audit | §3.3 | 🚧 the production stores (PF-1..3) swap in behind the same seam; SCP guardrails already in `infra/policies/` |
 | BAAs (AssemblyAI, AWS, Microsoft, Anthropic workspace) | §2.6.5 | ⛔ human signatures — runbook + issues #6/#7/#8/#9; server's BAA registry mirrors them at runtime |
 
 ## Product pipeline
