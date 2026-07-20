@@ -306,25 +306,25 @@ export function getAudit(params?: { meetingId?: string; actor?: string }): Promi
 /* --------------------------------- admin ------------------------------- */
 
 export function getBaaRegistry(): Promise<BaaRegistry> {
-  return api<BaaRegistry>("/admin/baa-registry");
+  return api<{ baa: BaaRegistry }>("/admin/baa-registry").then((r) => r.baa);
 }
 
 export function putBaaRegistry(body: BaaRegistry): Promise<BaaRegistry> {
-  return api<BaaRegistry>("/admin/baa-registry", { method: "PUT", body });
+  return api<{ baa: BaaRegistry }>("/admin/baa-registry", { method: "PUT", body }).then((r) => r.baa);
 }
 
 export function getConsentPolicy(): Promise<ConsentPolicy> {
-  return api<ConsentPolicy>("/admin/consent-policy");
+  return api<{ policy: ConsentPolicy }>("/admin/consent-policy").then((r) => r.policy);
 }
 
 export function putConsentPolicy(body: ConsentPolicy): Promise<ConsentPolicy> {
-  return api<ConsentPolicy>("/admin/consent-policy", { method: "PUT", body });
+  return api<{ policy: ConsentPolicy }>("/admin/consent-policy", { method: "PUT", body }).then((r) => r.policy);
 }
 
 export function getRetention(): Promise<RetentionPolicy> {
-  return api<RetentionPolicy>("/admin/retention");
+  return api<{ retention: RetentionPolicy }>("/admin/retention").then((r) => r.retention);
 }
 
 export function putRetention(body: RetentionPolicy): Promise<RetentionPolicy> {
-  return api<RetentionPolicy>("/admin/retention", { method: "PUT", body });
+  return api<{ retention: RetentionPolicy }>("/admin/retention", { method: "PUT", body }).then((r) => r.retention);
 }

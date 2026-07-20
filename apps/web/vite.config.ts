@@ -26,6 +26,22 @@ export default defineConfig({
     },
   },
   server: {
-    proxy: Object.fromEntries(apiPaths.map((p) => [p, { target: API, changeOrigin: true }])),
+    proxy: Object.fromEntries(
+      apiPaths.map((p) => [
+        p,
+        {
+          target: API,
+          changeOrigin: true,
+          // Only proxy API calls, never browser page navigations: /admin is
+          // both a UI route and an API prefix, and without this bypass a
+          // reload on /admin serves the API's JSON as the page.
+          bypass: (req: { headers: Record<string, string | string[] | undefined> }) => {
+            const accept = String(req.headers.accept ?? "");
+            if (accept.includes("text/html")) return "/index.html";
+            return undefined;
+          },
+        },
+      ]),
+    ),
   },
 });

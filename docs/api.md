@@ -29,9 +29,9 @@ Every content read is audit-logged server-side. All list/detail responses are AC
 | POST `/memos` | `{dataBase64}` → `{text}` | Voice memo via Sync path (≤120 s) |
 | GET `/search` | `?q=` → `{hits}` | `{meetingId, title, snippet, layer}`; ACL + revocation aware |
 | GET `/audit` | `?meetingId=&actor=` → `{events}` | `compliance_auditor`/`org_admin` only |
-| GET `/admin/baa-registry` · PUT same | `{assemblyai, awsBedrock, claudeWorkspace, microsoft}` | org_admin; drives §6.6 gating |
-| GET `/admin/consent-policy` · PUT same | `{requiredMechanisms, phiFailSafe}` | org_admin |
-| GET `/admin/retention` · PUT same | `{audioDays, transcriptDays, auditDays}` | org_admin |
+| GET `/admin/baa-registry` · PUT same | body `{assemblyai, awsBedrock, claudeWorkspace, microsoft}` → response `{baa}` | org_admin; drives §6.6 gating |
+| GET `/admin/consent-policy` · PUT same | body `{requiredMechanisms, phiFailSafe}` → response `{policy}` | org_admin |
+| GET `/admin/retention` · PUT same | body `{audioDays, transcriptDays, auditDays}` → response `{retention}` | org_admin |
 
 **MCP server:** `POST /mcp` — Model Context Protocol (Streamable HTTP), same bearer auth, tools `search_meetings`, `list_meetings`, `get_meeting`, `get_transcript`, `get_action_items`. Results are ACL-filtered per caller and PHI-flag-gated per the BAA registry (spec §6.3, §6.6). No audio, no cross-user notes, no writes.
 
