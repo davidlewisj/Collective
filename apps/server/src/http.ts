@@ -67,6 +67,31 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     reply.code(code).send({ error: err.message });
   });
 
+  // CORS: the packaged desktop shell serves the UI from its own loopback
+  // origin and calls this server cross-origin. Allow loopback origins by
+  // default plus any explicitly configured ones (COLLECTIVE_ALLOWED_ORIGINS,
+  // comma-separated). Everything else gets no CORS headers — blocked.
+  const LOOPBACK_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+  const extraOrigins = (process.env.COLLECTIVE_ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const corsHeaders = (origin: string | undefined): Record<string, string> =>
+    origin && (LOOPBACK_ORIGIN.test(origin) || extraOrigins.includes(origin))
+      ? {
+          "access-control-allow-origin": origin,
+          "access-control-allow-headers": "authorization, content-type, accept",
+          "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE",
+          "access-control-max-age": "600",
+          vary: "Origin",
+        }
+      : {};
+
+  app.addHook("onRequest", async (req, reply) => {
+    for (const [k, v] of Object.entries(corsHeaders(req.headers.origin))) reply.header(k, v);
+    if (req.method === "OPTIONS") return reply.code(204).send();
+  });
+
   /* ------------------------------- auth -------------------------------- */
 
   app.post("/auth/dev-login", async (req, reply) => {
@@ -220,6 +245,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       "content-type": "text/event-stream",
       "cache-control": "no-cache",
       connection: "keep-alive",
+      ...corsHeaders(req.headers.origin), // raw writeHead bypasses the hook's reply headers
     });
     const sink = (event: string, data: unknown) =>
       reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
