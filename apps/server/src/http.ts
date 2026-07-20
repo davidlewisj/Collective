@@ -153,6 +153,15 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     return { meeting: view, myLayers };
   });
 
+  app.patch("/meetings/:id", async (req, reply) => {
+    const m = getMeeting(req, reply, (req.params as { id: string }).id);
+    if (m.ownerUserId !== req.user.id) return fail(reply, 403, "owner only");
+    const { title } = z.object({ title: z.string().max(200) }).parse(req.body);
+    m.title = title;
+    audit.emit({ actorUserId: req.user.id, action: "meeting.title_edited", meetingId: m.id });
+    return { meeting: m };
+  });
+
   app.post("/meetings/:id/consent", async (req, reply) => {
     const m = getMeeting(req, reply, (req.params as { id: string }).id);
     const body = z

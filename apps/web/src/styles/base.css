@@ -1,0 +1,278 @@
+/*
+ * Base styles for Collective web. Every color, size, radius, shadow, font and
+ * duration comes from the token custom properties (packages/tokens). Values
+ * the design spec mandates but that have no direct token (720px column, 44px
+ * hit targets, the 1.6s pulse, the 1.2s shimmer, 80ms stagger) are derived
+ * here ONCE via calc() over published tokens, never repeated as magic numbers.
+ */
+:root {
+  --app-col-max: calc(var(--space-8) * 11.25); /* 720px calm column (spec §7.3.1) */
+  --app-hit: calc(var(--space-5) + var(--space-4) + var(--space-1)); /* 44px touch targets (spec §7.6) */
+  --app-ring: calc(var(--space-1) / 2); /* 2px focus ring (spec §7.6) */
+  --app-hairline: calc(var(--space-1) / 4); /* 1px hairline borders */
+  --app-pulse-period: calc(var(--motion-slow) * 16 / 3); /* 1.6s breathing pulse (spec §7.3.2) */
+  --app-shimmer-period: calc(var(--motion-slow) * 4); /* 1.2s skeleton shimmer (spec §7.3.3) */
+  --app-stagger: calc(var(--motion-instant) * 0.8); /* 80ms section stagger (spec §7.3.3) */
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--c-linen);
+  color: var(--c-ink);
+  font: var(--type-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+p,
+ul,
+ol,
+blockquote,
+fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+ul,
+ol {
+  list-style: none;
+}
+
+/* Focus: juniper ring, 2px with 2px offset (spec §7.6). */
+:focus-visible {
+  outline: var(--app-ring) solid var(--c-juniper);
+  outline-offset: var(--app-ring);
+}
+
+a {
+  color: var(--c-juniper);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: var(--space-1);
+  height: var(--space-1);
+  margin: calc(-1 * var(--space-1));
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+mark {
+  background: color-mix(in srgb, var(--c-juniper) 22%, transparent);
+  color: inherit;
+  border-radius: var(--radius-control);
+}
+
+/* ------------------------------- controls ------------------------------- */
+
+button {
+  font: var(--type-body);
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition:
+    transform var(--motion-instant) var(--motion-ease-standard),
+    background-color var(--motion-instant) var(--motion-ease-standard),
+    color var(--motion-instant) var(--motion-ease-standard);
+}
+
+/* Button press: 97% scale (spec §7.4). */
+button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.btn {
+  background: var(--c-juniper);
+  color: var(--c-linen);
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-4);
+  font: var(--type-body);
+  font-weight: 600;
+  min-height: calc(var(--space-6) + var(--space-1));
+}
+
+.btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--c-juniper) 88%, var(--c-ink));
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.btn-quiet {
+  color: var(--c-ink);
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-3);
+  min-height: calc(var(--space-6) + var(--space-1));
+}
+
+.btn-quiet:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--c-mist) 40%, transparent);
+}
+
+.btn-mini {
+  font: var(--type-body-sm);
+  font-weight: 600;
+  color: var(--c-juniper);
+  border: var(--app-hairline) solid var(--c-mist);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-3);
+  background: var(--c-surface-raised);
+}
+
+.btn-mini:hover:not(:disabled) {
+  border-color: var(--c-juniper);
+}
+
+input,
+select,
+textarea {
+  font: var(--type-body);
+  color: var(--c-ink);
+  background: var(--c-surface-raised);
+  border: var(--app-hairline) solid var(--c-mist);
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-3);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--c-sage);
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--c-juniper);
+  width: var(--space-4);
+  height: var(--space-4);
+  padding: 0;
+}
+
+label {
+  font: var(--type-body-sm);
+  color: var(--c-ink);
+}
+
+.section-label {
+  display: inline-block;
+  font: var(--type-caption);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--c-sage);
+}
+
+.field-error {
+  color: var(--c-state-error);
+  font: var(--type-body-sm);
+  margin-top: var(--space-2);
+  animation: app-settle var(--motion-fast) var(--motion-ease-decelerate);
+}
+
+/* Touch targets ≥ 44px on coarse pointers (spec §7.6). */
+@media (pointer: coarse) {
+  button,
+  input,
+  select,
+  .chip {
+    min-height: var(--app-hit);
+  }
+}
+
+/* ------------------------------ keyframes ------------------------------- */
+
+@keyframes app-pulse {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.45);
+  }
+}
+
+@keyframes app-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes app-settle {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-1));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes chip-slide {
+  from {
+    opacity: 0;
+    transform: translateX(calc(-1 * var(--space-2)));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Screens enter with a quiet fade + 4px rise (brief: list→detail). */
+.page-enter {
+  animation: app-settle var(--motion-base) var(--motion-ease-decelerate);
+}
+
+/* Reduced motion: tokens.css already collapses durations; also stop loops. */
+@media (prefers-reduced-motion: reduce) {
+  .page-enter {
+    animation: none;
+  }
+}

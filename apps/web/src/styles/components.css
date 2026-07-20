@@ -1,0 +1,279 @@
+/* Shared components: chips, badges, avatars, modal, notes, waveform, skeleton. */
+
+/* ------------------------------- avatars -------------------------------- */
+
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  font: var(--type-caption);
+  font-weight: 600;
+  flex: none;
+}
+
+.avatar-sm {
+  width: var(--space-5);
+  height: var(--space-5);
+}
+
+.avatar-md {
+  width: var(--space-6);
+  height: var(--space-6);
+}
+
+.person-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font: var(--type-body-sm);
+  color: var(--c-sage);
+}
+
+/* --------------------------------- chips -------------------------------- */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  font: var(--type-caption);
+  background: color-mix(in srgb, var(--c-mist) 55%, transparent);
+  color: var(--c-ink);
+  border: none;
+}
+
+.chip-tappable {
+  cursor: pointer;
+}
+
+.chip-tappable:hover {
+  background: color-mix(in srgb, var(--c-juniper) 14%, transparent);
+  color: var(--c-juniper);
+}
+
+/* ----------------------------- state badges ----------------------------- */
+
+.state-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
+  font: var(--type-caption);
+}
+
+.state-dot {
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  flex: none;
+}
+
+.state-dot-pulse {
+  animation: dot-pulse var(--app-shimmer-period) var(--motion-ease-standard) infinite;
+}
+
+.state-badge-recording {
+  color: var(--c-state-recording);
+  background: color-mix(in srgb, var(--c-state-recording) 12%, transparent);
+}
+
+.state-badge-processing {
+  color: var(--c-state-processing);
+  background: color-mix(in srgb, var(--c-state-processing) 12%, transparent);
+}
+
+.state-badge-shared {
+  color: var(--c-state-shared);
+  background: color-mix(in srgb, var(--c-state-shared) 12%, transparent);
+}
+
+.state-badge-success {
+  color: var(--c-state-success);
+  background: color-mix(in srgb, var(--c-state-success) 12%, transparent);
+}
+
+.state-badge-error {
+  color: var(--c-state-error);
+  background: color-mix(in srgb, var(--c-state-error) 12%, transparent);
+}
+
+/* ------------------------------ speaker chip ----------------------------- */
+
+.speaker-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  font: var(--type-caption);
+  font-weight: 600;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  border: none;
+  color: var(--c-ink);
+}
+
+button.speaker-chip {
+  cursor: pointer;
+}
+
+button.speaker-chip:hover {
+  background: color-mix(in srgb, currentColor 18%, transparent);
+}
+
+/* Unknown/guest speakers: desaturated gray until named (spec §7.2.3). */
+.speaker-chip-unknown {
+  color: var(--c-sage);
+}
+
+.speaker-chip-enter {
+  animation: chip-slide var(--motion-fast) var(--motion-ease-decelerate);
+}
+
+/* --------------------------------- modal -------------------------------- */
+
+.modal-scrim {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--c-ink) 40%, transparent);
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  z-index: 20;
+}
+
+.modal-sheet {
+  background: var(--c-surface-raised);
+  border-radius: var(--radius-sheet);
+  box-shadow: var(--elev-e3);
+  padding: var(--space-5);
+  width: 100%;
+  max-width: calc(var(--space-8) * 7);
+  max-height: 85dvh;
+  overflow-y: auto;
+  animation: app-settle var(--motion-base) var(--motion-ease-decelerate);
+}
+
+.modal-sheet-wide {
+  max-width: calc(var(--space-8) * 9);
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.modal-title {
+  font: var(--type-display);
+}
+
+/* ------------------------------ notes editor ----------------------------- */
+
+.notes-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 0;
+}
+
+.notes-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.only-you-badge {
+  font: var(--type-caption);
+  color: var(--c-sage);
+  background: color-mix(in srgb, var(--c-sage) 14%, transparent);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-2);
+}
+
+.notes-save {
+  font: var(--type-caption);
+  color: var(--c-sage);
+  margin-left: auto;
+  transition: color var(--motion-fast) var(--motion-ease-standard);
+}
+
+.notes-save-saved {
+  color: var(--c-state-success);
+}
+
+.notes-save-error {
+  color: var(--c-state-error);
+}
+
+.notes-textarea {
+  width: 100%;
+  resize: vertical;
+  line-height: inherit;
+  min-height: calc(var(--space-8) * 2);
+}
+
+/* ------------------------------- waveform ------------------------------- */
+
+.waveform-band {
+  height: var(--space-8);
+  background: var(--c-linen);
+  border-top: var(--app-hairline) solid var(--c-mist);
+  border-bottom: var(--app-hairline) solid var(--c-mist);
+  flex: none;
+}
+
+.waveform-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ------------------------------- skeleton ------------------------------- */
+
+.skeleton-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+}
+
+.skeleton-line {
+  height: var(--space-4);
+  border-radius: var(--radius-control);
+  background: linear-gradient(
+    90deg,
+    var(--c-mist),
+    var(--c-linen),
+    var(--c-mist)
+  );
+  background-size: 200% 100%;
+  animation: app-shimmer var(--app-shimmer-period) linear infinite;
+}
+
+.skeleton-line:last-child {
+  width: 62%;
+}
+
+.settle {
+  animation: app-settle var(--motion-slow) var(--motion-ease-decelerate) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-line {
+    animation: none;
+    background: var(--c-mist);
+  }
+
+  .state-dot-pulse,
+  .speaker-chip-enter,
+  .settle,
+  .modal-sheet {
+    animation: none;
+  }
+}
