@@ -245,10 +245,11 @@ export function putNote(id: string, body: string): Promise<Note> {
 }
 
 /** Fetch the (stub) audio; the call itself is what gets audited. */
-export async function fetchAudio(id: string): Promise<boolean> {
+export async function fetchAudioBlob(id: string): Promise<Blob | null> {
   const res = await fetch(apiUrl(`/meetings/${id}/audio`), { headers: authHeaders() });
   if (res.status === 401) onUnauthorized?.();
-  return res.ok;
+  if (!res.ok) return null;
+  return res.blob();
 }
 
 /* -------------------------------- shares ------------------------------- */
