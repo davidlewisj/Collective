@@ -8,7 +8,7 @@ Every content read is audit-logged server-side. All list/detail responses are AC
 |---|---|---|
 | POST `/auth/dev-login` | `{email}` → `{token, user}` | Seeded users; 404 for unknown email |
 | GET `/auth/config` | → `{microsoft}` | Which sign-in methods are configured |
-| GET `/auth/microsoft` → `/auth/callback` | OAuth2 code flow (Entra ID, confidential client) | Links by email or auto-provisions as member; session token returned via `WEB_ORIGIN/login#msToken=`; Graph refresh token stored for calendar naming |
+| GET `/auth/microsoft` → `/auth/callback` | OAuth2 code flow (Entra ID, confidential client) | id_token verified (RS256 signature against the tenant JWKS, then iss/aud/exp); links by email or auto-provisions as member; session token returned via `WEB_ORIGIN/login#msToken=`; Graph refresh token stored for calendar naming |
 | PUT `/admin/users/:id/role` | `{role}` → `{user}` | org_admin; not on yourself; audit-logged |
 | GET `/me` | → `{user}` | |
 | GET `/users` | → `{users}` | Directory (id, displayName, role, speakerHue) for pickers |

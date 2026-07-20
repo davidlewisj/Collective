@@ -5,11 +5,11 @@
  * Confidential-client authorization-code flow, server side: the browser is
  * redirected to login.microsoftonline.com, comes back to /auth/callback with
  * a code, and the server exchanges it (with the client secret) for tokens.
- * ID-token claims are read after direct TLS exchange with the issuer's token
- * endpoint and checked for issuer/audience/expiry; full JWKS signature
- * verification is production hardening tracked in STATUS.md. MFA is enforced
- * by the tenant's conditional-access policy (recorded per sign-in via the
- * `amr` claim when present).
+ * The id_token is verified before its claims are trusted: RS256 signature
+ * against the tenant's published JWKS (keys cached, re-fetched on an unknown
+ * `kid` to follow Entra's key rotation), then issuer/audience/expiry. MFA is
+ * enforced by the tenant's conditional-access policy (recorded per sign-in
+ * via the `amr` claim when present).
  *
  * Delegated Calendars.Read powers calendar naming: the event covering "now"
  * from /me/calendarView, with attendee emails for directory mapping. Refresh
@@ -18,6 +18,12 @@
  * All HTTP goes through an injectable fetcher so the whole flow is testable
  * without a live tenant.
  */
+import {
+  createPublicKey,
+  verify as verifySignature,
+  type JsonWebKey as CryptoJsonWebKey,
+  type KeyObject,
+} from "node:crypto";
 import { CalendarEvent } from "./calendar.js";
 
 export interface GraphConfig {
@@ -64,13 +70,16 @@ export const realHttp: HttpJson = async (url, init) => {
   return { status: res.status, json: () => res.json() };
 };
 
-function decodeJwtPayload(jwt: string): Record<string, unknown> {
-  const payload = jwt.split(".")[1];
-  if (!payload) throw new Error("malformed id_token");
-  return JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Record<string, unknown>;
+interface JwkRsa {
+  kid?: string;
+  kty?: string;
+  [k: string]: unknown;
 }
 
 export class MsGraph {
+  /** RS256 signing keys by `kid`, populated from the tenant JWKS on demand. */
+  private signingKeys = new Map<string, KeyObject>();
+
   constructor(
     private cfg: GraphConfig,
     private http: HttpJson = realHttp,
@@ -78,6 +87,62 @@ export class MsGraph {
 
   private get authority(): string {
     return `https://login.microsoftonline.com/${this.cfg.tenantId}`;
+  }
+
+  /** Tenant JWKS endpoint (Entra v2.0 signing keys). */
+  private get jwksUrl(): string {
+    return `${this.authority}/discovery/v2.0/keys`;
+  }
+
+  private async refreshSigningKeys(): Promise<void> {
+    const res = await this.http(this.jwksUrl);
+    if (res.status !== 200) throw new Error(`jwks endpoint: ${res.status}`);
+    const data = (await res.json()) as { keys?: JwkRsa[] };
+    const next = new Map<string, KeyObject>();
+    for (const jwk of data.keys ?? []) {
+      if (!jwk.kid || jwk.kty !== "RSA") continue;
+      try {
+        next.set(jwk.kid, createPublicKey({ key: jwk as CryptoJsonWebKey, format: "jwk" }));
+      } catch {
+        /* skip a malformed key rather than fail the whole set */
+      }
+    }
+    this.signingKeys = next;
+  }
+
+  private async signingKeyFor(kid: string): Promise<KeyObject> {
+    // Cache miss → (re)fetch: covers cold start and Entra's periodic rotation.
+    if (!this.signingKeys.has(kid)) await this.refreshSigningKeys();
+    const key = this.signingKeys.get(kid);
+    if (!key) throw new Error("id_token signed by an unknown key");
+    return key;
+  }
+
+  /**
+   * Verify an id_token's RS256 signature against the tenant JWKS and return
+   * its claims. Rejects unsigned tokens (`alg: none`) and any algorithm other
+   * than RS256 — the only algorithm Entra uses to sign id_tokens.
+   */
+  private async verifiedClaims(idToken: string): Promise<Record<string, unknown>> {
+    const parts = idToken.split(".");
+    if (parts.length !== 3) throw new Error("malformed id_token");
+    const [headerB64, payloadB64, sigB64 = ""] = parts;
+    if (!headerB64 || !payloadB64) throw new Error("malformed id_token");
+    const header = JSON.parse(Buffer.from(headerB64, "base64url").toString("utf8")) as {
+      alg?: string;
+      kid?: string;
+    };
+    if (header.alg !== "RS256") throw new Error(`unsupported id_token alg: ${header.alg}`);
+    if (!header.kid) throw new Error("id_token missing kid");
+    const key = await this.signingKeyFor(header.kid);
+    const ok = verifySignature(
+      "RSA-SHA256",
+      Buffer.from(`${headerB64}.${payloadB64}`),
+      key,
+      Buffer.from(sigB64, "base64url"),
+    );
+    if (!ok) throw new Error("id_token signature invalid");
+    return JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8")) as Record<string, unknown>;
   }
 
   authorizeUrl(state: string): string {
@@ -110,8 +175,8 @@ export class MsGraph {
     }
     let claims: IdClaims = { email: "", name: "", oid: "" };
     if (data.id_token) {
-      const p = decodeJwtPayload(data.id_token);
-      // Claim checks (signature verification = prod hardening, see header).
+      const p = await this.verifiedClaims(data.id_token);
+      // Signature verified above; now the semantic claim checks.
       const iss = String(p.iss ?? "");
       if (!iss.includes(this.cfg.tenantId)) throw new Error("id_token issuer mismatch");
       if (p.aud !== this.cfg.clientId) throw new Error("id_token audience mismatch");
