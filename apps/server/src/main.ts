@@ -11,6 +11,7 @@ import {
   appendAuditEvent,
   loadAuditEvents,
 } from "./persist.js";
+import { makeRelayFactory } from "./relay.js";
 import { startRetentionWorker } from "./retention.js";
 import { applyEnvOverrides, createDb, seedUsers } from "./store.js";
 
@@ -49,7 +50,8 @@ if (transcriber.name === "mock" && insight.name === "mock") {
 }
 
 const audioStore = new DiskAudioStore(dataDir);
-const app = buildApp({ db, audit, transcriber, insight, audioStore });
+const upstreamFactory = makeRelayFactory();
+const app = buildApp({ db, audit, transcriber, insight, audioStore, upstreamFactory });
 snapshot.startAutosave();
 startRetentionWorker(db, audit, audioStore);
 
@@ -65,7 +67,11 @@ app
   .listen({ port, host: "0.0.0.0" })
   .then(() => {
     console.log(`Collective server on :${port}`);
-    console.log(`  transcriber: ${transcriber.name}  insight: ${insight.name}`);
+    console.log(
+      `  transcriber: ${transcriber.name}  insight: ${insight.name}  live-captions: ${
+        transcriber.name === "mock" ? "mock" : upstreamFactory ? "streaming relay" : "off"
+      }`,
+    );
     console.log(
       `  data: ${dataDir} (${restored ? `restored ${db.meetings.size} meeting(s), ${priorEvents.length} audit events` : "fresh"})`,
     );

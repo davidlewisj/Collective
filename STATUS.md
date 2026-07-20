@@ -34,7 +34,7 @@ Honest, story-level map of what exists in this repository versus the design spec
 | Diarized transcription — mock adapter | §2.2 | ✅ deterministic dev engine |
 | Diarized transcription — AssemblyAI async (`speaker_labels`, eager delete) | §2.2 | 🔶 real REST adapter written; needs a keyed account + BAA to validate |
 | Voice memos — Sync API | §2.2 | 🔶 same |
-| Live captions | §2.2 | ✅ SSE dev slice — 🚧 real AssemblyAI v3 WebSocket relay (IN-2) |
+| Live captions — streaming relay to AssemblyAI v3 (`speaker_labels`, PCM16 relay, §6.6-gated, idle cost guard) | §2.2 (IN-2) | ✅ mock mode + 🔶 real relay implemented, unit-tested, and e2e-verified against a protocol-faithful fake vendor — final validation against the live AssemblyAI endpoint needs a keyed run |
 | Attribution v1: mic-channel identity, roster name cues, margin rule, corrections, unknown speakers | §2.3.1, §2.3.4 | ✅ tested |
 | Insight — mock heuristic + fallback | §6.1 | ✅ |
 | Insight — Claude on Bedrock (`anthropic.claude-sonnet-5`, assignee validation, minimum-necessary payload) | §6.1, §6.5 | 🔶 adapter written; needs AWS account under BAA |

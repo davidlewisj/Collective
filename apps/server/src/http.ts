@@ -5,6 +5,8 @@
  * content access (§2.6.1), PHI flag semantics (§6.6).
  */
 import Fastify, { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import websocket from "@fastify/websocket";
+import type WebSocket from "ws";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import {
@@ -31,6 +33,7 @@ import { Db, newId, userByEmail } from "./store.js";
 import { Insight } from "./adapters/insight.js";
 import { Transcriber } from "./adapters/transcriber.js";
 import { AudioStore, MemoryAudioStore } from "./persist.js";
+import { StreamingRelay, UpstreamFactory } from "./relay.js";
 import { registerMcp } from "./mcp.js";
 
 export interface AppDeps {
@@ -40,6 +43,8 @@ export interface AppDeps {
   insight: Insight;
   /** Defaults to in-memory; main.ts passes the disk store. */
   audioStore?: AudioStore;
+  /** Live-caption vendor socket factory (relay.ts); null/absent = no live vendor captions. */
+  upstreamFactory?: UpstreamFactory | null;
 }
 
 declare module "fastify" {
@@ -57,6 +62,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   const { db, audit } = deps;
   const hub = new LiveHub();
   const audioStore = deps.audioStore ?? new MemoryAudioStore();
+  const relay = new StreamingRelay(db, hub, audit, deps.upstreamFactory ?? null);
   const pipeline: PipelineDeps = {
     ...deps,
     hub,
@@ -109,8 +115,12 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
   const PUBLIC = new Set(["/auth/dev-login", "/health"]);
   app.addHook("preHandler", async (req: FastifyRequest, reply: FastifyReply) => {
-    if (PUBLIC.has(req.url.split("?")[0]!)) return;
-    const token = (req.headers.authorization ?? "").replace(/^Bearer /, "");
+    const path = req.url.split("?")[0]!;
+    if (PUBLIC.has(path)) return;
+    // Browser WebSockets cannot send an Authorization header, so the live
+    // stream route (and only it) may pass the bearer token as ?token=.
+    const wsToken = path.endsWith("/stream") ? ((req.query as { token?: string }).token ?? "") : "";
+    const token = (req.headers.authorization ?? "").replace(/^Bearer /, "") || wsToken;
     const session = db.sessions.get(token);
     if (!session) return fail(reply, 401, "unauthenticated");
     const idleMs = db.idleMinutes * 60 * 1000;
@@ -249,9 +259,12 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     });
     const sink = (event: string, data: unknown) =>
       reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-    // liveCaptions: real vendors transcribe after the meeting (the streaming
-    // relay is backlog IN-2); only the mock engine captions live today.
-    sink("status", { status: m.status, liveCaptions: deps.transcriber.name === "mock" });
+    // liveCaptions: the mock engine scripts them locally; real vendors need
+    // the streaming relay to be configured AND §6.6 egress to allow it.
+    sink("status", {
+      status: m.status,
+      liveCaptions: deps.transcriber.name === "mock" || relay.available(m),
+    });
     const unsub = hub.subscribe(m.id, sink);
     req.raw.on("close", unsub);
     return reply; // stream held open
@@ -500,6 +513,23 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       .parse(req.body);
     audit.emit({ actorUserId: req.user.id, action: "admin.retention_updated", detail: JSON.stringify(db.retention) });
     return { retention: db.retention };
+  });
+
+  // Live PCM streaming for real-vendor captions (relay.ts, backlog IN-2).
+  void app.register(websocket);
+  void app.register(async (scope) => {
+    scope.get("/meetings/:id/stream", { websocket: true }, (connection, req) => {
+      // @fastify/websocket v10 hands a stream wrapper with .socket; be
+      // tolerant of the v11 bare-socket signature too.
+      const socket = ((connection as { socket?: WebSocket }).socket ?? connection) as WebSocket;
+      const m = db.meetings.get((req.params as { id: string }).id);
+      if (!m || m.ownerUserId !== req.user.id || m.status !== "recording") {
+        socket.close(1008, "not streamable");
+        return;
+      }
+      const rate = Math.min(Math.max(Number((req.query as { rate?: string }).rate ?? 16000) || 16000, 8000), 48000);
+      relay.attach(socket, m, rate);
+    });
   });
 
   registerMcp(app, deps);

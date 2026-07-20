@@ -10,8 +10,10 @@ import {
   postObjection,
   startMeeting,
   stopMeeting,
+  wsUrl,
 } from "../api";
 import { subscribeSse } from "../sse";
+import { startPcmStream, type PcmStreamer } from "../lib/pcm";
 import { blobToBase64, playConsentTone } from "../lib/audio";
 import { fmtClock } from "../lib/format";
 import { useNote } from "../lib/useNote";
@@ -150,6 +152,7 @@ export function CapturePage() {
   const recRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const ctxRef = useRef<AudioContext | null>(null);
+  const pcmRef = useRef<PcmStreamer | null>(null);
   const seqRef = useRef(0);
   const pendingRef = useRef<Array<Promise<unknown>>>([]);
   const sseAbortRef = useRef<AbortController | null>(null);
@@ -166,6 +169,8 @@ export function CapturePage() {
   );
 
   const cleanup = useCallback(() => {
+    pcmRef.current?.stop();
+    pcmRef.current = null;
     sseAbortRef.current?.abort();
     sseAbortRef.current = null;
     const rec = recRef.current;
@@ -258,6 +263,10 @@ export function CapturePage() {
     source.connect(an);
     setAnalyser(an);
 
+    // Live-caption PCM stream to the server relay (real-engine mode). If the
+    // relay is off or gated, the socket just closes — recording is unaffected.
+    pcmRef.current = startPcmStream(audioCtx, source, wsUrl(`/meetings/${m.id}/stream?rate=16000`));
+
     const mime = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find(
       (t) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(t),
     );
@@ -329,6 +338,7 @@ export function CapturePage() {
     const rec = recRef.current;
     if (!rec || rec.state !== "recording") return;
     rec.pause();
+    pcmRef.current?.setPaused(true);
     accumulatedRef.current += Date.now() - runStartRef.current;
     setElapsed(accumulatedRef.current);
     setPhase("paused");
@@ -338,6 +348,7 @@ export function CapturePage() {
     const rec = recRef.current;
     if (!rec || rec.state !== "paused") return;
     rec.resume();
+    pcmRef.current?.setPaused(false);
     runStartRef.current = Date.now();
     setPhase("recording");
   };

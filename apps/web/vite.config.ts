@@ -32,6 +32,7 @@ export default defineConfig({
         {
           target: API,
           changeOrigin: true,
+          ws: true, // live-caption PCM stream (/meetings/:id/stream)
           // Only proxy API calls, never browser page navigations: /admin is
           // both a UI route and an API prefix, and without this bypass a
           // reload on /admin serves the API's JSON as the page.

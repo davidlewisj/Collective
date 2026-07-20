@@ -68,6 +68,19 @@ export function apiUrl(path: string): string {
   return base.replace(/\/+$/, "") + path;
 }
 
+/**
+ * WebSocket URL for the live-caption stream. Browser WebSockets cannot carry
+ * an Authorization header, so the bearer token rides as a query parameter
+ * (accepted by the server for this route only).
+ */
+export function wsUrl(path: string): string {
+  const base = (globalThis as unknown as { __COLLECTIVE_API__?: string }).__COLLECTIVE_API__;
+  const origin = base ? base.replace(/\/+$/, "") : `${location.protocol}//${location.host}`;
+  const token = loadSession()?.token ?? "";
+  const sep = path.includes("?") ? "&" : "?";
+  return `${origin.replace(/^http/, "ws")}${path}${sep}token=${encodeURIComponent(token)}`;
+}
+
 export function authHeaders(): Record<string, string> {
   const session = loadSession();
   return session ? { Authorization: `Bearer ${session.token}` } : {};
