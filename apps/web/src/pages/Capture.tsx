@@ -32,7 +32,7 @@ const CHUNK_MS = 3000;
 
 /* ------------------------- live transcript view ------------------------- */
 
-function LiveTranscript({ lines }: { lines: CaptionLine[] }) {
+function LiveTranscript({ lines, liveCaptions }: { lines: CaptionLine[]; liveCaptions: boolean }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
@@ -95,7 +95,11 @@ function LiveTranscript({ lines }: { lines: CaptionLine[] }) {
     <div className="live-transcript-wrap">
       <div className="live-transcript" ref={scrollRef} onScroll={onScroll}>
         {blocks.length === 0 && (
-          <p className="live-transcript-empty">Live transcript appears here as people speak.</p>
+          <p className="live-transcript-empty">
+            {liveCaptions
+              ? "Live transcript appears here as people speak."
+              : "Recording is on. The transcript arrives shortly after you stop — live captions are coming in a future update."}
+          </p>
         )}
         {blocks.map((b, i) => (
           <div className="live-block" key={`${b.cluster}-${i}`}>
@@ -135,6 +139,7 @@ export function CapturePage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [lines, setLines] = useState<CaptionLine[]>([]);
+  const [liveCaptions, setLiveCaptions] = useState(true);
   const [elapsed, setElapsed] = useState(0);
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const [notesOpen, setNotesOpen] = useState(false);
@@ -277,7 +282,9 @@ export function CapturePage() {
         onEvent: (event, data) => {
           if (event === "caption") onCaption(data);
           else if (event === "status") {
-            const s = (data as { status?: string })?.status;
+            const payload = data as { status?: string; liveCaptions?: boolean };
+            if (typeof payload?.liveCaptions === "boolean") setLiveCaptions(payload.liveCaptions);
+            const s = payload?.status;
             if ((s === "processing" || s === "ready") && !leavingRef.current) {
               // Stopped from elsewhere — follow the meeting to its record.
               leavingRef.current = true;
@@ -467,7 +474,7 @@ export function CapturePage() {
 
       {(isLive || phase === "stopping") && (
         <div className="capture-body">
-          <LiveTranscript lines={lines} />
+          <LiveTranscript lines={lines} liveCaptions={liveCaptions} />
           <aside className={`notes-pane${notesOpen ? " notes-pane-open" : ""}`}>
             <NotesEditor body={note.body} onChange={note.setBody} saveState={note.saveState} rows={14} />
           </aside>

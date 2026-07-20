@@ -3,6 +3,7 @@ import { AuditLog } from "../src/audit.js";
 import { buildApp } from "../src/http.js";
 import { MockInsight } from "../src/adapters/insight.js";
 import { MockTranscriber } from "../src/adapters/transcriber.js";
+import { Transcriber } from "../src/adapters/transcriber.js";
 import { createDb, Db, seedUsers } from "../src/store.js";
 
 export interface Ctx {
@@ -11,11 +12,16 @@ export interface Ctx {
   audit: AuditLog;
 }
 
-export function makeCtx(): Ctx {
+export function makeCtx(overrides: { transcriber?: Transcriber } = {}): Ctx {
   const db = createDb();
   seedUsers(db);
   const audit = new AuditLog();
-  const app = buildApp({ db, audit, transcriber: new MockTranscriber(), insight: new MockInsight() });
+  const app = buildApp({
+    db,
+    audit,
+    transcriber: overrides.transcriber ?? new MockTranscriber(),
+    insight: new MockInsight(),
+  });
   return { app, db, audit };
 }
 

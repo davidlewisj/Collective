@@ -94,7 +94,9 @@ export class AssemblyAiTranscriber implements Transcriber {
     const { id } = (await create.json()) as { id: string };
 
     try {
-      for (;;) {
+      // Poll with a hard cap (~30 min) so a stuck job can never wedge the
+      // pipeline; the caller's error path preserves audio for reprocessing.
+      for (let attempt = 0; attempt < 600; attempt++) {
         await new Promise((r) => setTimeout(r, 3000));
         const poll = await fetch(`${AAI}/transcript/${id}`, { headers: this.headers() });
         const body = (await poll.json()) as {
@@ -115,6 +117,7 @@ export class AssemblyAiTranscriber implements Transcriber {
           }));
         }
       }
+      throw new Error("assemblyai: transcription timed out after 30 minutes");
     } finally {
       // Eager vendor-side deletion (backlog TO-3, spec §2.2) — best effort,
       // alarmed in production.

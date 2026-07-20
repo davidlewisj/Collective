@@ -18,7 +18,7 @@ Honest, story-level map of what exists in this repository versus the design spec
 | RBAC policy decision point, deny-by-default, audio as distinct permission | §2.6.1, §2.7.2 | ✅ (`rbac.ts`; deny paths tested incl. admin-no-content, attendee-no-layers) |
 | Hash-chained append-only audit of every content access | §2.6.1, §3.3 | ✅ (`audit.ts`; tamper detection tested) — 🚧 WORM/S3 Object Lock store (AR-1 prod target) |
 | Consent policy engine, WA-strict default, objection path | §2.6.2 | ✅ (start blocked until attestation; objection deletes audio, keeps notes) |
-| Per-meeting PHI flag + BAA-registry egress gating (both directions) + fail-safe | §6.6 | ✅ (insight skip + MCP exclusion tested; pulled forward from Phase 1.5) |
+| Per-meeting PHI flag + BAA-registry egress gating (insight, MCP, **and** real-vendor transcription) + fail-safe + owner reprocess after registry changes | §6.6 | ✅ (all three gates tested; pulled forward from Phase 1.5) |
 | Retention clocks + deletion cascade | §2.6.4 | ✅ sweep tested — 🚧 soft-delete window, backup expiry, deletion certificates |
 | Session idle timeout | §2.6.1 | ✅ server-side — 🚧 client lock UX |
 | OIDC SSO (Entra ID), MFA, SCIM, device registry | §2.6.1 | 🚧 dev-login stands in; designs in issues #11–#15 |
