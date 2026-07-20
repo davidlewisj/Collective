@@ -1,0 +1,75 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  CP-2 guard (Collective): alert the security channel whenever the Amazon
+  Bedrock model-invocation logging configuration is created, changed, or
+  deleted. Complements scp-bedrock-logging-guard.json - the SCP blocks the
+  action in member accounts, while this alert also covers the management
+  account, where SCPs do not apply. Requires CloudTrail management events
+  (enabled by default in AWS Organizations trails) in the deployed region.
+  Bedrock invocation logging must stay OFF for PHI workloads per
+  docs/design-spec.md section 6.5.
+
+Parameters:
+  AlertEmail:
+    Type: String
+    Description: Email address subscribed to security alerts for this guard.
+
+Resources:
+  BedrockLoggingGuardTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: collective-bedrock-logging-guard
+      KmsMasterKeyId: alias/aws/sns
+
+  BedrockLoggingGuardSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref BedrockLoggingGuardTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  BedrockLoggingGuardTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref BedrockLoggingGuardTopic
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowEventBridgePublish
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref BedrockLoggingGuardTopic
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !GetAtt BedrockLoggingConfigChangeRule.Arn
+
+  BedrockLoggingConfigChangeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: collective-bedrock-logging-config-change
+      Description: >-
+        Fires on any CloudTrail-recorded change to the Bedrock model-invocation
+        logging configuration. Expected steady state: this rule never fires.
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.bedrock
+        detail-type:
+          - AWS API Call via CloudTrail
+        detail:
+          eventSource:
+            - bedrock.amazonaws.com
+          eventName:
+            - PutModelInvocationLoggingConfiguration
+            - DeleteModelInvocationLoggingConfiguration
+      Targets:
+        - Arn: !Ref BedrockLoggingGuardTopic
+          Id: security-alert-topic
+
+Outputs:
+  TopicArn:
+    Description: SNS topic receiving Bedrock logging-guard alerts.
+    Value: !Ref BedrockLoggingGuardTopic
