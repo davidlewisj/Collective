@@ -1,0 +1,74 @@
+name: Release desktop (Windows)
+
+# Builds the one-click Windows installer on a Windows runner and attaches it
+# to a GitHub Release. Trigger manually (Actions → "Release desktop (Windows)"
+# → Run workflow) or by pushing a v* tag.
+#
+# NOTE: the installer is NOT code-signed (no certificate in this repo), so
+# Windows SmartScreen will warn on first run ("More info" → "Run anyway").
+# Code signing is part of backlog story HD-3 before any real rollout.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version label (e.g. 0.1.0)"
+        required: false
+        default: "0.1.0"
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install workspaces
+        run: npm ci
+
+      - name: Build tokens + web UI
+        run: |
+          npm run build --workspace packages/tokens
+          npm run build --workspace apps/web
+
+      - name: Bundle web UI into the desktop shell
+        shell: bash
+        run: |
+          rm -rf apps/desktop/web
+          cp -r apps/web/dist apps/desktop/web
+
+      - name: Install desktop dependencies (Electron + builder)
+        working-directory: apps/desktop
+        run: npm install --no-package-lock
+
+      - name: Build NSIS installer
+        working-directory: apps/desktop
+        run: npm run dist:win
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Collective-Windows-Setup
+          path: apps/desktop/out/Collective-Setup-*.exe
+          if-no-files-found: error
+
+      - name: Attach to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}-desktop', inputs.version || '0.1.0') }}
+          name: Collective Desktop ${{ github.ref_type == 'tag' && github.ref_name || inputs.version || '0.1.0' }} (Windows)
+          body: |
+            One-click Windows installer for the Collective desktop app (unsigned dev build — SmartScreen will warn; choose "More info" → "Run anyway").
+
+            After install, the app connects to `http://localhost:4000` by default. Point it at a Collective server by setting the `COLLECTIVE_API_URL` environment variable or creating `%APPDATA%/Collective/config.json` with `{"apiUrl": "https://your-server"}`.
+          files: apps/desktop/out/Collective-Setup-*.exe
+          draft: false
+          prerelease: true

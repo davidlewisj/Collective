@@ -31,6 +31,71 @@ const WEB_URL = process.env.COLLECTIVE_WEB_URL || "http://localhost:5173";
 const START_CAPTURE_CHANNEL = "collective:start-capture";
 const CAPTURE_SHORTCUT = "CommandOrControl+Shift+R";
 
+// Packaged builds bundle the web app (apps/web/dist copied to ./web by the
+// release workflow) and serve it from a loopback-only static server, injecting
+// window.__COLLECTIVE_API__ so the UI talks to the configured Collective
+// server. Configure via COLLECTIVE_API_URL or userData/config.json
+// ({"apiUrl": "https://collective.example.org"}); default is a local dev
+// server. Dev runs (no ./web folder) keep loading the Vite dev server URL.
+const http = require("node:http");
+const fs = require("node:fs");
+
+/** Resolved at startup; loadURL target for the main window. */
+let webUrl = WEB_URL;
+
+function resolveApiUrl() {
+  if (process.env.COLLECTIVE_API_URL) return process.env.COLLECTIVE_API_URL;
+  try {
+    const cfgPath = path.join(app.getPath("userData"), "config.json");
+    const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+    if (typeof cfg.apiUrl === "string" && cfg.apiUrl) return cfg.apiUrl;
+  } catch {
+    /* no config file — fall through to default */
+  }
+  return "http://localhost:4000";
+}
+
+const MIME = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript",
+  ".css": "text/css",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".woff2": "font/woff2",
+  ".json": "application/json",
+};
+
+function startBundledWebServer() {
+  const webDir = path.join(__dirname, "..", "web");
+  if (!fs.existsSync(path.join(webDir, "index.html"))) return Promise.resolve(null);
+  const apiUrl = resolveApiUrl();
+  const inject = `<script>window.__COLLECTIVE_API__=${JSON.stringify(apiUrl)};</script>`;
+  const index = fs
+    .readFileSync(path.join(webDir, "index.html"), "utf8")
+    .replace("<head>", `<head>${inject}`);
+
+  const server = http.createServer((req, res) => {
+    const reqPath = decodeURIComponent((req.url || "/").split("?")[0]);
+    const filePath = path.normalize(path.join(webDir, reqPath));
+    // SPA fallback + path-traversal guard: anything outside webDir or missing
+    // serves the (injected) index.
+    if (filePath.startsWith(webDir) && reqPath !== "/" && fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+      res.writeHead(200, { "content-type": MIME[path.extname(filePath)] || "application/octet-stream" });
+      fs.createReadStream(filePath).pipe(res);
+    } else {
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(index);
+    }
+  });
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      console.log(`[collective] bundled web UI on http://127.0.0.1:${address.port} → API ${apiUrl}`);
+      resolve(`http://127.0.0.1:${address.port}`);
+    });
+  });
+}
+
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
 /** @type {Tray | null} */
@@ -56,9 +121,10 @@ if (!gotSingleInstanceLock) {
   });
 }
 
-function onReady() {
+async function onReady() {
   installDisplayMediaRequestHandler(session.defaultSession);
   installPermissionRequestHandler(session.defaultSession);
+  webUrl = (await startBundledWebServer()) || WEB_URL;
   createMainWindow();
   createTray();
   registerGlobalShortcut();
@@ -90,9 +156,9 @@ function createMainWindow() {
 
   mainWindow = new BrowserWindow(options);
 
-  mainWindow.loadURL(WEB_URL).catch((err) => {
+  mainWindow.loadURL(webUrl).catch((err) => {
     console.error(
-      `[collective] could not load ${WEB_URL} — is the web dev server running?`,
+      `[collective] could not load ${webUrl} — is the web dev server running?`,
       err
     );
   });

@@ -7,13 +7,40 @@
   "scripts": {
     "predev": "node -e \"console.log('[collective] Reminder: start the API (npm run dev:server) and web app (npm run dev:web) from the repo root first. Set COLLECTIVE_WEB_URL to point elsewhere (default http://localhost:5173).')\"",
     "dev": "electron .",
-    "start": "electron ."
+    "start": "electron .",
+    "dist:win": "electron-builder --win nsis --publish never"
   },
   "collective": {
-    "note": "This package is INTENTIONALLY OUTSIDE the npm workspaces in the repo-root package.json, so `npm install` at the root (and therefore CI) never downloads the ~100 MB Electron binary. Install its deps separately from this directory. To install without fetching the Electron binary at all (e.g. for lint/check-only environments), run: ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm install. Plain CommonJS, zero build step — Electron loads src/main.js directly."
+    "note": "This package is INTENTIONALLY OUTSIDE the npm workspaces in the repo-root package.json, so `npm install` at the root (and therefore CI) never downloads the ~100 MB Electron binary. Install its deps separately from this directory. To install without fetching the Electron binary at all (e.g. for lint/check-only environments), run: ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm install. Plain CommonJS, zero build step — Electron loads src/main.js directly. The `web/` folder (bundled UI) is copied in from apps/web/dist by the release workflow."
+  },
+  "build": {
+    "appId": "dev.collective.desktop",
+    "productName": "Collective",
+    "directories": {
+      "output": "out"
+    },
+    "files": [
+      "src/**",
+      "web/**",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "Collective-Setup-${version}.${ext}"
+    }
   },
   "devDependencies": {
-    "electron": "^31.0.0"
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.0"
   },
   "engines": {
     "node": ">=20"

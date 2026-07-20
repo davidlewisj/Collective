@@ -58,6 +58,16 @@ export function setUnauthorizedHandler(fn: (() => void) | null): void {
   onUnauthorized = fn;
 }
 
+/**
+ * API origin override. Browsers use same-origin paths (vite dev proxy /
+ * reverse proxy in production). The packaged desktop shell sets
+ * window.__COLLECTIVE_API__ to the server origin before the app loads.
+ */
+export function apiUrl(path: string): string {
+  const base = (globalThis as unknown as { __COLLECTIVE_API__?: string }).__COLLECTIVE_API__ ?? "";
+  return base.replace(/\/+$/, "") + path;
+}
+
 export function authHeaders(): Record<string, string> {
   const session = loadSession();
   return session ? { Authorization: `Bearer ${session.token}` } : {};
@@ -67,7 +77,7 @@ async function api<T>(
   path: string,
   opts: { method?: string; body?: unknown } = {},
 ): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetch(apiUrl(path), {
     method: opts.method ?? "GET",
     headers: {
       ...(opts.body !== undefined ? { "Content-Type": "application/json" } : {}),
@@ -236,7 +246,7 @@ export function putNote(id: string, body: string): Promise<Note> {
 
 /** Fetch the (stub) audio; the call itself is what gets audited. */
 export async function fetchAudio(id: string): Promise<boolean> {
-  const res = await fetch(`/meetings/${id}/audio`, { headers: authHeaders() });
+  const res = await fetch(apiUrl(`/meetings/${id}/audio`), { headers: authHeaders() });
   if (res.status === 401) onUnauthorized?.();
   return res.ok;
 }

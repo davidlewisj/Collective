@@ -3,7 +3,7 @@
  * Authorization header the API requires, so we stream the response body and
  * parse SSE frames ourselves. Reconnects with a small backoff until aborted.
  */
-import { authHeaders } from "./api";
+import { apiUrl, authHeaders } from "./api";
 
 export interface SseHandlers {
   onEvent: (event: string, data: unknown) => void;
@@ -20,7 +20,7 @@ export function subscribeSse(path: string, handlers: SseHandlers, signal: AbortS
 async function runLoop(path: string, handlers: SseHandlers, signal: AbortSignal): Promise<void> {
   while (!signal.aborted) {
     try {
-      const res = await fetch(path, {
+      const res = await fetch(apiUrl(path), {
         headers: { Accept: "text/event-stream", ...authHeaders() },
         signal,
       });
