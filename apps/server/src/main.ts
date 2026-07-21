@@ -1,4 +1,5 @@
 import "./env.js"; // .env auto-loading — must be first so adapters see the values
+import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AuditLog } from "./audit.js";
@@ -19,6 +20,12 @@ import { applyEnvOverrides, createDb, seedUsers } from "./store.js";
 
 const serverDir = dirname(dirname(fileURLToPath(import.meta.url))); // apps/server
 const dataDir = resolve(process.env.COLLECTIVE_DATA_DIR ?? join(serverDir, ".data"));
+
+// Single-origin serving: if a built web app is present (or COLLECTIVE_WEB_DIR
+// points at one), the server serves it too — the deploy topology (docs/deploy.md).
+const webDir = process.env.COLLECTIVE_WEB_DIR
+  ? resolve(process.env.COLLECTIVE_WEB_DIR)
+  : join(dirname(serverDir), "web", "dist"); // apps/web/dist
 
 const db = createDb();
 seedUsers(db);
@@ -57,7 +64,18 @@ const graphCfg = graphConfigFromEnv();
 const graph = graphCfg ? new MsGraph(graphCfg) : null;
 const oauthCfg = oauthConfigFromEnv();
 const oauth = new OAuthProvider(db, audit, oauthCfg);
-const app = buildApp({ db, audit, transcriber, insight, audioStore, upstreamFactory, graph, oauth });
+const servingWeb = existsSync(join(webDir, "index.html"));
+const app = buildApp({
+  db,
+  audit,
+  transcriber,
+  insight,
+  audioStore,
+  upstreamFactory,
+  graph,
+  oauth,
+  webDir: servingWeb ? webDir : undefined,
+});
 snapshot.startAutosave();
 startRetentionWorker(db, audit, audioStore);
 
@@ -83,6 +101,7 @@ app
     );
     console.log(`  microsoft sign-in: ${graph ? "on (Entra ID)" : "off — set GRAPH_TENANT_ID/GRAPH_CLIENT_ID/GRAPH_CLIENT_SECRET"}`);
     console.log(`  mcp oauth: issuer ${oauthCfg.issuer} (set COLLECTIVE_PUBLIC_URL for a public deploy)`);
+    console.log(`  web app: ${servingWeb ? `serving ${webDir} (single origin)` : "not bundled — run the Vite dev server separately"}`);
     console.log(`  dev users: dana@ | omar@ | priya@ | casey@  (collective.dev)`);
   })
   .catch((err) => {

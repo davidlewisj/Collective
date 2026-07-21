@@ -1,0 +1,30 @@
+# Render Blueprint — one public HTTPS origin for a Collective STAGING deploy.
+# See docs/deploy.md. Staging/validation only: no real patient data belongs
+# here (production PHI needs a BAA-covered host — STATUS.md PF-1..3).
+#
+# Render injects RENDER_EXTERNAL_URL, and the server uses it as the OAuth
+# issuer / MCP resource / consent origin automatically — so no URL needs to be
+# set by hand. Add the GRAPH_* vars in the dashboard when you want Microsoft
+# sign-in (docs/deploy.md).
+services:
+  - type: web
+    name: collective
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    # Starter (~$7/mo) keeps a persistent disk and the app always-on, which the
+    # Claude connector needs (issued tokens live on the disk). A free instance
+    # works for a quick look but sleeps and loses its disk.
+    plan: starter
+    healthCheckPath: /health
+    disk:
+      name: collective-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      # Optional — set these in the dashboard to enable Microsoft sign-in.
+      - key: GRAPH_TENANT_ID
+        sync: false
+      - key: GRAPH_CLIENT_ID
+        sync: false
+      - key: GRAPH_CLIENT_SECRET
+        sync: false

@@ -20,6 +20,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { User } from "@collective/shared";
 import { AuditLog } from "./audit.js";
+import { publicOrigin, webOrigin } from "./config.js";
 import { Db, OAuthClient } from "./store.js";
 
 /** Read tiers exposed as OAuth scopes (spec §6.4). */
@@ -36,9 +37,8 @@ export interface OAuthConfig {
 }
 
 export function oauthConfigFromEnv(env: NodeJS.ProcessEnv = process.env): OAuthConfig {
-  const issuer = (env.COLLECTIVE_PUBLIC_URL ?? `http://localhost:${env.PORT ?? 4000}`).replace(/\/+$/, "");
-  const webOrigin = (env.WEB_ORIGIN ?? "http://localhost:5173").replace(/\/+$/, "");
-  return { issuer, resource: `${issuer}/mcp`, webOrigin };
+  const issuer = publicOrigin(env);
+  return { issuer, resource: `${issuer}/mcp`, webOrigin: webOrigin(env) };
 }
 
 const b64urlSha256 = (input: string): string => createHash("sha256").update(input).digest("base64url");
