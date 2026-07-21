@@ -35,6 +35,7 @@ import { search } from "./search.js";
 import { Db, linkOrProvisionUser, newId, userByEmail } from "./store.js";
 import { MsGraph } from "./msgraph.js";
 import { OAUTH_SCOPES, OAuthProvider } from "./oauth.js";
+import { webOrigin as resolveWebOrigin } from "./config.js";
 import { Insight } from "./adapters/insight.js";
 import { Transcriber } from "./adapters/transcriber.js";
 import { AudioStore, MemoryAudioStore } from "./persist.js";
@@ -168,7 +169,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
   const graph = deps.graph ?? null;
   const oauth = deps.oauth ?? null;
-  const webOrigin = (deps.webOrigin ?? process.env.WEB_ORIGIN ?? "http://localhost:5173").replace(/\/+$/, "");
+  const webOrigin = (deps.webOrigin ?? resolveWebOrigin()).replace(/\/+$/, "");
   const oauthStates = new Map<string, number>(); // state -> createdAt (CSRF)
 
   app.get("/auth/config", async () => ({ microsoft: !!graph }));

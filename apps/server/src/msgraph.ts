@@ -25,6 +25,7 @@ import {
   type KeyObject,
 } from "node:crypto";
 import { CalendarEvent } from "./calendar.js";
+import { publicOrigin } from "./config.js";
 
 export interface GraphConfig {
   tenantId: string;
@@ -40,7 +41,7 @@ export function graphConfigFromEnv(env: NodeJS.ProcessEnv = process.env): GraphC
     tenantId: GRAPH_TENANT_ID,
     clientId: GRAPH_CLIENT_ID,
     clientSecret: GRAPH_CLIENT_SECRET,
-    redirectUri: env.GRAPH_REDIRECT_URI ?? "http://localhost:4000/auth/callback",
+    redirectUri: env.GRAPH_REDIRECT_URI ?? `${publicOrigin(env)}/auth/callback`,
   };
 }
 

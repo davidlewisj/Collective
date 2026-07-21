@@ -33,8 +33,8 @@ if you run outside Docker.
 
 | Variable | Required | Value |
 |---|---|---|
-| `COLLECTIVE_PUBLIC_URL` | **yes** | The public origin, e.g. `https://collective.example.com`. Becomes the OAuth issuer + MCP resource. |
-| `WEB_ORIGIN` | **yes** | Same value as `COLLECTIVE_PUBLIC_URL` (single origin). Where the OAuth consent page lives. |
+| `COLLECTIVE_PUBLIC_URL` | see note | The public origin, e.g. `https://collective.example.com`. Becomes the OAuth issuer + MCP resource. **On Render this is auto-detected** from `RENDER_EXTERNAL_URL` — you can leave it unset. |
+| `WEB_ORIGIN` | see note | Same value as `COLLECTIVE_PUBLIC_URL` (single origin). Falls back to `COLLECTIVE_PUBLIC_URL` / `RENDER_EXTERNAL_URL`, so it's also auto-set on Render. |
 | `COLLECTIVE_DATA_DIR` | recommended | Path on a **persistent** disk (image default `/data`). Holds `state.json`, `audit.jsonl`, `audio/`. |
 | `PORT` | no | Listen port (default `4000`). Most hosts inject their own; the server honors it. |
 | `GRAPH_TENANT_ID` / `GRAPH_CLIENT_ID` / `GRAPH_CLIENT_SECRET` | for MS sign-in | From your Entra app registration. |
@@ -46,19 +46,30 @@ never makes a cross-origin call).
 
 ## Option A — Render (simplest)
 
-1. Push this repo to GitHub (already done for the working branch).
-2. Render → **New → Web Service** → connect the repo.
-3. **Runtime: Docker** (Render uses the root `Dockerfile`).
-4. **Add a persistent disk**: mount path `/data`, a few GB.
-5. **Environment variables**: set `COLLECTIVE_PUBLIC_URL` and `WEB_ORIGIN` to the
-   Render URL it gives you (e.g. `https://collective-xxxx.onrender.com`). Add the
-   `GRAPH_*` values if you want Microsoft sign-in.
-6. **Health check path**: `/health`.
-7. Deploy. Render terminates TLS for you, so the app is HTTPS immediately.
+The repo ships a **Render Blueprint** (`render.yaml`), so Render provisions the
+service, the persistent disk, and the health check for you — and the server
+picks up its own public URL from `RENDER_EXTERNAL_URL`, so there's **no URL to
+set by hand**.
 
-(Render assigns the URL *after* the first deploy. If it differs from what you
-guessed, update `COLLECTIVE_PUBLIC_URL` / `WEB_ORIGIN` and redeploy — the OAuth
-issuer must match the real URL.)
+1. Push this repo to GitHub (already done for the working branch).
+2. Render → **New → Blueprint** → connect the repo → **Apply**. It reads
+   `render.yaml`: a Docker web service named `collective`, a 1 GB disk at
+   `/data`, health check `/health`, plan **Starter**.
+3. Wait for the first deploy. Render terminates TLS, so it's HTTPS immediately
+   at the assigned `https://collective-xxxx.onrender.com`.
+4. That's the whole app. To turn on **Microsoft sign-in**, add `GRAPH_TENANT_ID`,
+   `GRAPH_CLIENT_ID`, `GRAPH_CLIENT_SECRET` in the service's **Environment** tab
+   (the Blueprint lists them, left blank), and add the redirect URI below.
+
+> **Cost / persistence:** Starter is ~$7/month and is what keeps the disk and
+> keeps the app awake — the Claude connector needs that, because the OAuth
+> clients and tokens live on the disk. A **Free** instance works for a quick
+> look but sleeps when idle and loses the disk (you'd re-create the connector
+> each time). To try Free, remove the `disk:` and set `plan: free` in
+> `render.yaml`.
+
+**Prefer clicking it yourself?** New → Web Service → Docker, add a disk at
+`/data`, set health check `/health`. Leave the URL vars unset (auto-detected).
 
 ## Option B — Fly.io
 
