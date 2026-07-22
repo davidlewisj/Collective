@@ -583,6 +583,8 @@
 
 .live-transcript {
   flex: 1;
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
   padding-bottom: var(--space-5);
 }
@@ -590,6 +592,188 @@
 .live-transcript-empty {
   color: var(--c-sage);
   margin-top: var(--space-5);
+}
+
+/* -------------------- bubble-color swatch picker ------------------------ */
+
+.swatch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.swatch {
+  width: calc(var(--space-6) + var(--space-1)); /* 36px */
+  height: calc(var(--space-6) + var(--space-1));
+  border-radius: var(--radius-pill);
+  background: var(--swatch);
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-surface-raised);
+  transition: transform var(--motion-instant) var(--motion-ease-standard);
+}
+
+.swatch:hover:not(:disabled) {
+  transform: scale(1.08);
+  background: var(--swatch);
+}
+
+.swatch-on {
+  box-shadow:
+    0 0 0 var(--app-ring) var(--c-surface-raised),
+    0 0 0 calc(var(--app-ring) * 2) var(--swatch);
+}
+
+.swatch-preview {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--space-2) 0;
+}
+
+/* ---------------------- speaker chat bubbles (§7.3) ---------------------- */
+
+.bubble-thread {
+  display: flex;
+  flex-direction: column;
+}
+
+.bubble-group {
+  display: flex;
+  flex-direction: column;
+  max-width: 76%;
+  margin-bottom: var(--space-4); /* gap between speakers */
+}
+
+.bubble-left {
+  align-self: flex-start;
+  align-items: flex-start;
+  animation: bubble-in-left var(--motion-base) var(--motion-ease-decelerate);
+}
+
+.bubble-right {
+  align-self: flex-end;
+  align-items: flex-end;
+  animation: bubble-in-right var(--motion-base) var(--motion-ease-decelerate);
+}
+
+.bubble-head {
+  position: relative; /* anchors the correction / naming popover */
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-bottom: var(--space-1);
+}
+
+.bubble-speaker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: transparent;
+  border: none;
+  padding: 0;
+  min-height: 0;
+}
+
+.bubble-speaker:hover:not(:disabled) {
+  background: transparent;
+}
+
+.bubble-name {
+  font: var(--type-caption);
+  font-weight: 600;
+  color: var(--bubble, var(--c-sage));
+}
+
+.bubble-kind-unknown .bubble-name {
+  color: var(--c-sage);
+}
+
+.bubble-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1); /* same-speaker consecutive turns */
+  align-items: inherit;
+}
+
+.bubble {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  font: var(--type-body);
+  color: var(--c-ink);
+  border-radius: var(--radius-sheet);
+  background: color-mix(in srgb, var(--bubble, var(--c-mist)) 10%, var(--c-surface-raised));
+  border: var(--app-hairline) solid color-mix(in srgb, var(--bubble, var(--c-mist)) 32%, transparent);
+  transition:
+    background-color var(--motion-slow) var(--motion-ease-standard),
+    border-color var(--motion-slow) var(--motion-ease-standard);
+}
+
+/* Facilitator: the most saturated object on screen marks "you". */
+.bubble-kind-owner .bubble {
+  background: color-mix(in srgb, var(--bubble) 16%, var(--c-surface-raised));
+}
+
+/* Softened outer corner on the last bubble of a group (a quiet "tail"). */
+.bubble-right .bubble-stack .bubble:last-child {
+  border-bottom-right-radius: var(--radius-control);
+}
+
+.bubble-left .bubble-stack .bubble:last-child {
+  border-bottom-left-radius: var(--radius-control);
+}
+
+/* Unknown voice: neutral + dashed, no hue, until it's named. */
+.bubble-kind-unknown .bubble {
+  background: var(--c-surface-raised);
+  border-style: dashed;
+  border-color: var(--c-mist);
+}
+
+/* Live interim captions read faint, then solidify when finalized. */
+.bubble-interim {
+  opacity: 0.7;
+  color: var(--c-sage);
+}
+
+.bubble-ts {
+  font: var(--type-mono-sm);
+  color: var(--c-sage);
+  margin-top: var(--space-1);
+}
+
+@keyframes bubble-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(calc(-1 * var(--space-2)));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes bubble-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(var(--space-2));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bubble-left,
+  .bubble-right {
+    animation: none;
+  }
+  .bubble {
+    transition: none;
+  }
 }
 
 .live-block {

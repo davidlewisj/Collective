@@ -205,15 +205,25 @@ export function postChunk(id: string, seq: number, dataBase64: string): Promise<
   return api(`/meetings/${id}/chunks`, { method: "POST", body: { seq, dataBase64 } });
 }
 
-/** Name a live speaker cluster mid-capture; returns the full cluster→name map. */
+export interface LiveSpeaker {
+  name: string;
+  userId: string | null;
+}
+
+/** Name a live speaker cluster mid-capture; returns the full cluster→who map. */
 export function nameLiveSpeaker(
   id: string,
   body: { cluster: string; userId?: string; guestLabel?: string },
-): Promise<Record<string, string>> {
-  return api<{ speakers: Record<string, string> }>(`/meetings/${id}/live/speaker`, {
+): Promise<Record<string, LiveSpeaker>> {
+  return api<{ speakers: Record<string, LiveSpeaker> }>(`/meetings/${id}/live/speaker`, {
     method: "POST",
     body,
   }).then((r) => r.speakers);
+}
+
+/** Set the caller's personal bubble color (0 = accent, 1..8 = speaker ramp). */
+export function putAppearance(bubbleHue: number): Promise<User> {
+  return api<{ user: User }>("/me/appearance", { method: "PUT", body: { bubbleHue } }).then((r) => r.user);
 }
 
 export function stopMeeting(id: string): Promise<Meeting> {

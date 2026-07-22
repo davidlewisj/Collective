@@ -59,7 +59,7 @@ describe("in-session speaker naming (live capture)", () => {
       payload: { cluster: "B", userId: "u_omar" },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().speakers).toEqual({ B: "Omar Reyes" });
+    expect(res.json().speakers).toEqual({ B: { name: "Omar Reyes", userId: "u_omar" } });
     expect(ctx.audit.query({ meetingId: id }).some((e) => e.action === "live.speaker_named")).toBe(true);
 
     await stopAndWaitReady(ctx, t, id);
