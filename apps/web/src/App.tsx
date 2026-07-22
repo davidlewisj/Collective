@@ -1,11 +1,10 @@
 import { Component, type ReactNode } from "react";
-import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AuthProvider, RequireAuth } from "./auth";
 import { LoginPage } from "./pages/Login";
 import { MeetingListPage } from "./pages/MeetingList";
 import { CapturePage } from "./pages/Capture";
 import { MeetingDetailPage } from "./pages/MeetingDetail";
-import { AdminPage } from "./pages/Admin";
 import { SettingsPage } from "./pages/Settings";
 import { ConnectConsentPage } from "./pages/ConnectConsent";
 
@@ -79,14 +78,8 @@ function AppRoutes() {
             </RequireAuth>
           }
         />
-        <Route
-          path="/admin"
-          element={
-            <RequireAuth>
-              <AdminPage />
-            </RequireAuth>
-          }
-        />
+        {/* Admin folded into Settings; keep the old path working. */}
+        <Route path="/admin" element={<Navigate to="/settings#workspace" replace />} />
         <Route
           path="/settings"
           element={
