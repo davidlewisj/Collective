@@ -37,9 +37,8 @@ function SaveNote({ state }: { state: SaveState }) {
 
 const BAA_LABELS: Array<{ key: keyof BaaRegistry; label: string; hint: string }> = [
   { key: "assemblyai", label: "AssemblyAI", hint: "Transcription" },
-  { key: "awsBedrock", label: "AWS Bedrock", hint: "AI summaries" },
-  { key: "claudeWorkspace", label: "Claude workspace", hint: "MCP / connector access" },
-  { key: "microsoft", label: "Microsoft", hint: "Teams & Graph" },
+  { key: "claudeWorkspace", label: "Claude workspace", hint: "Claude connector (summaries & Q&A)" },
+  { key: "microsoft", label: "Microsoft", hint: "Sign-in & calendar" },
 ];
 
 function BaaCard() {

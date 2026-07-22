@@ -26,7 +26,7 @@ import WebSocket from "ws";
 import { AuditLog } from "./audit.js";
 import { LiveHub } from "./pipeline.js";
 import { transcriptionEgressAllowed } from "./policy.js";
-import { Db } from "./store.js";
+import { Db, recordLiveTurn } from "./store.js";
 
 /* ------------------------------- upstream ------------------------------ */
 
@@ -164,10 +164,15 @@ export class StreamingRelay {
         return;
       }
       if (msg.type !== "Turn" || typeof msg.transcript !== "string" || msg.transcript.length === 0) return;
+      const cluster = clusterOf(msg);
+      const interim = !(msg.end_of_turn && msg.turn_is_formatted !== false);
+      // Finalized turns feed in-session speaker naming: at stop, live-named
+      // clusters are matched to the batch transcript's clusters by this text.
+      if (!interim) recordLiveTurn(this.db, meeting.id, cluster, msg.transcript);
       this.hub.emit(meeting.id, "caption", {
-        cluster: clusterOf(msg),
+        cluster,
         text: msg.transcript,
-        interim: !(msg.end_of_turn && msg.turn_is_formatted !== false),
+        interim,
         seq: msg.turn_order ?? 0,
       });
     });

@@ -25,11 +25,6 @@ export function phiEffective(db: Db, meeting: Meeting): boolean {
   return false;
 }
 
-/** May this meeting's text be sent to Claude (Bedrock) for insight jobs? */
-export function insightEgressAllowed(db: Db, meeting: Meeting): boolean {
-  return !phiEffective(db, meeting) || db.baa.awsBedrock;
-}
-
 /** May this meeting's AUDIO be sent to AssemblyAI for transcription? */
 export function transcriptionEgressAllowed(db: Db, meeting: Meeting): boolean {
   return !phiEffective(db, meeting) || db.baa.assemblyai;

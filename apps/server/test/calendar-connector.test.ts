@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { eventCovering, parseIcs } from "../src/calendar.js";
 import { AuditLog } from "../src/audit.js";
 import { buildApp } from "../src/http.js";
-import { MockInsight } from "../src/adapters/insight.js";
 import { MockTranscriber } from "../src/adapters/transcriber.js";
 import { createDb, seedUsers } from "../src/store.js";
 import { auth, login } from "./helpers.js";
@@ -72,7 +71,6 @@ describe("calendar naming on capture create", () => {
       db,
       audit,
       transcriber: new MockTranscriber(),
-      insight: new MockInsight(),
       icsFetcher: async () => icsAroundNow(),
     });
     const ctx = { app, db, audit };
@@ -107,7 +105,6 @@ describe("calendar naming on capture create", () => {
       db,
       audit: new AuditLog(),
       transcriber: new MockTranscriber(),
-      insight: new MockInsight(),
       icsFetcher: async () => {
         throw new Error("feed down");
       },
@@ -124,8 +121,8 @@ describe("Claude connector tokens", () => {
   it("mints a token that works on /mcp only, and revocation kills it", async () => {
     const db = createDb();
     seedUsers(db);
-    db.baa = { assemblyai: true, awsBedrock: true, claudeWorkspace: true, microsoft: true };
-    const app = buildApp({ db, audit: new AuditLog(), transcriber: new MockTranscriber(), insight: new MockInsight() });
+    db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true };
+    const app = buildApp({ db, audit: new AuditLog(), transcriber: new MockTranscriber() });
     const ctx = { app, db, audit: new AuditLog() };
     const t = await login(ctx, "dana@collective.dev");
 

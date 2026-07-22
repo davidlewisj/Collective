@@ -69,16 +69,16 @@ describe("transcription vendor gating (§6.6 / CP-1 invariant)", () => {
     // Audio never left the building.
     expect(vendor.calls).toBe(0);
     const view = (await ctx.app.inject({ method: "GET", url: `/meetings/${id}`, headers: auth(t) })).json();
-    expect(view.meeting.ai.skippedReason).toContain("no AssemblyAI BAA");
+    expect(view.meeting.notice).toContain("no AssemblyAI BAA");
     expect(view.meeting.audioChunks).toBeGreaterThan(0); // preserved for reprocessing
     expect(ctx.audit.query({ meetingId: id }).some((e) => e.action === "transcription.skipped_phi_gate")).toBe(true);
 
     // BAA recorded in the registry → reprocess → vendor runs, transcript lands.
-    ctx.db.baa = { assemblyai: true, awsBedrock: true, claudeWorkspace: true, microsoft: true };
+    ctx.db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true };
     await ctx.app.inject({ method: "POST", url: `/meetings/${id}/reprocess`, headers: auth(t) });
     for (let i = 0; i < 100; i++) {
       const m = await ctx.app.inject({ method: "GET", url: `/meetings/${id}`, headers: auth(t) });
-      if (m.json().meeting.status === "ready" && !m.json().meeting.ai?.skippedReason) break;
+      if (m.json().meeting.status === "ready" && !m.json().meeting.notice) break;
       await new Promise((r) => setTimeout(r, 10));
     }
     expect(vendor.calls).toBe(1);
@@ -123,7 +123,7 @@ describe("transcription vendor gating (§6.6 / CP-1 invariant)", () => {
 
   it("reprocess is owner-only and requires preserved audio", async () => {
     const ctx = makeCtx();
-    ctx.db.baa = { assemblyai: true, awsBedrock: true, claudeWorkspace: true, microsoft: true };
+    ctx.db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true };
     const dana = await login(ctx, "dana@collective.dev");
     const id = await captureToReady(ctx, dana);
     const omar = await login(ctx, "omar@collective.dev");

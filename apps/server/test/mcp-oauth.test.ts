@@ -2,7 +2,6 @@ import { createHash, randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { AuditLog } from "../src/audit.js";
 import { buildApp } from "../src/http.js";
-import { MockInsight } from "../src/adapters/insight.js";
 import { MockTranscriber } from "../src/adapters/transcriber.js";
 import { OAuthProvider } from "../src/oauth.js";
 import { hasToolScope } from "../src/mcp.js";
@@ -22,7 +21,6 @@ function makeCtx(): Ctx {
     db,
     audit,
     transcriber: new MockTranscriber(),
-    insight: new MockInsight(),
     oauth,
     webOrigin: "http://localhost:5173",
   });

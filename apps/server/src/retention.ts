@@ -37,7 +37,7 @@ export function runRetentionSweep(
       for (const [k] of db.notes) if (k.startsWith(`${m.id}:`)) db.notes.delete(k);
       for (const [id, g] of db.shares) if (g.meetingId === m.id) db.shares.delete(id);
       m.status = "deleted";
-      m.ai = undefined;
+      m.notice = undefined;
       recordsDeleted++;
       audit.emit({ actorUserId: "system_retention", action: "retention.record_deleted", meetingId: m.id, layer: "record" });
     }

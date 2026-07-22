@@ -205,6 +205,17 @@ export function postChunk(id: string, seq: number, dataBase64: string): Promise<
   return api(`/meetings/${id}/chunks`, { method: "POST", body: { seq, dataBase64 } });
 }
 
+/** Name a live speaker cluster mid-capture; returns the full cluster→name map. */
+export function nameLiveSpeaker(
+  id: string,
+  body: { cluster: string; userId?: string; guestLabel?: string },
+): Promise<Record<string, string>> {
+  return api<{ speakers: Record<string, string> }>(`/meetings/${id}/live/speaker`, {
+    method: "POST",
+    body,
+  }).then((r) => r.speakers);
+}
+
 export function stopMeeting(id: string): Promise<Meeting> {
   return api<{ meeting: Meeting }>(`/meetings/${id}/stop`, { method: "POST" }).then(
     (r) => r.meeting,

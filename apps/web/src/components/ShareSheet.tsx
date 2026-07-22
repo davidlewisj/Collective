@@ -15,8 +15,8 @@ interface RowSpec {
 const ROWS: RowSpec[] = [
   {
     layer: "summary",
-    label: "Summary & actions",
-    hint: "The overview and to-dos. Recipients' access is logged.",
+    label: "Overview",
+    hint: "The meeting record: title, date, attendees. Recipients' access is logged.",
     allowEdit: true,
   },
   {

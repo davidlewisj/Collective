@@ -1,13 +1,15 @@
 /**
- * MCP server (design-spec §6.2–6.4): the Claude.ai custom-connector surface.
- * Streamable HTTP, stateless (a fresh server+transport per request), same
- * bearer auth as the rest of the API — every tool call executes under the
- * CALLER's identity and is audit-logged. Tool results are ACL-filtered and
- * PHI-flag-gated per the BAA registry (§6.6). Deliberately absent: audio,
- * cross-user notes, writes.
+ * MCP server (design-spec §6.2–6.4): the Claude.ai custom-connector surface,
+ * and — since D10 removed the backend summary job — the ONLY way summaries,
+ * action items, and archive Q&A happen: the user asks their own Claude, which
+ * reads the transcript and the caller's own notes through these tools.
  *
- * Production adds the full OAuth 2.1 resource-server behavior (RFC 9728
- * discovery, RFC 8707 audience binding) in front of this — spec §6.4.
+ * Streamable HTTP, stateless (a fresh server+transport per request). Every
+ * tool call executes under the CALLER's identity and is audit-logged. Tool
+ * results are ACL-filtered and PHI-flag-gated per the BAA registry (§6.6).
+ * Deliberately absent: audio, cross-user notes, writes.
+ *
+ * Auth: OAuth 2.1 resource server (oauth.ts) / connector token / session.
  */
 import { FastifyInstance } from "fastify";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -45,14 +47,18 @@ export function mcpSearchMeetings(db: Db, user: User, q: string) {
 export function mcpGetMeeting(db: Db, user: User, id: string) {
   const m = db.meetings.get(id);
   if (!m || !visibleViaMcp(db, user, m)) return undefined;
-  const summaryOk = can(db, user, "read", m, "summary");
+  const names = (ids: string[]) =>
+    ids.map((uid) => db.users.get(uid)?.displayName).filter((n): n is string => !!n);
   return {
     id: m.id,
     title: m.title,
     createdAt: m.createdAt,
+    startedAt: m.startedAt,
+    endedAt: m.endedAt,
     status: m.status,
-    summary: summaryOk ? m.ai?.summary : undefined,
-    actionItems: summaryOk ? m.ai?.actionItems : undefined,
+    owner: names([m.ownerUserId])[0],
+    attendees: names(m.attendeeUserIds),
+    notice: m.notice,
   };
 }
 
@@ -64,21 +70,12 @@ export function mcpGetTranscript(db: Db, user: User, id: string) {
   return utts.map((u) => ({ at: u.startMs, speaker: name(u), text: u.text }));
 }
 
-export function mcpGetActionItems(db: Db, user: User) {
-  const out: Array<{ meetingId: string; title: string; text: string; assignee?: string; done: boolean }> = [];
-  for (const m of db.meetings.values()) {
-    if (!visibleViaMcp(db, user, m) || !can(db, user, "read", m, "summary")) continue;
-    for (const a of m.ai?.actionItems ?? []) {
-      out.push({
-        meetingId: m.id,
-        title: m.title,
-        text: a.text,
-        assignee: a.assigneeUserId ? db.users.get(a.assigneeUserId)?.displayName : undefined,
-        done: a.done,
-      });
-    }
-  }
-  return out;
+/** The CALLER's own note for a meeting — never anyone else's (spec §2.4). */
+export function mcpGetNote(db: Db, user: User, id: string) {
+  const m = db.meetings.get(id);
+  if (!m || !visibleViaMcp(db, user, m)) return undefined;
+  const note = db.notes.get(`${id}:${user.id}`);
+  return note ? { body: note.body, updatedAt: note.updatedAt } : { body: "", updatedAt: null };
 }
 
 /* -------------------------- transport wiring --------------------------- */
@@ -89,7 +86,7 @@ export const TOOL_SCOPE: Record<string, string> = {
   list_meetings: "meetings.read",
   get_meeting: "meetings.read",
   get_transcript: "transcripts.read",
-  get_action_items: "meetings.read",
+  get_notes: "meetings.read",
 };
 
 /** Whether a granted scope set permits a given MCP tool. */
@@ -130,7 +127,7 @@ function buildMcpServer(db: Db, audit: AuditLog, user: User, scopes: string[]): 
   );
   server.tool(
     "get_meeting",
-    "Fetch one meeting's metadata, summary, and action items — the cheapest sufficient payload.",
+    "Fetch one meeting's metadata: title, times, owner, attendees. Use get_transcript + get_notes for content to summarize.",
     { meetingId: z.string() },
     async ({ meetingId }) => {
       if (!has("get_meeting")) return denied("get_meeting");
@@ -141,7 +138,7 @@ function buildMcpServer(db: Db, audit: AuditLog, user: User, scopes: string[]): 
   );
   server.tool(
     "get_transcript",
-    "Fetch a meeting's attributed transcript. Requires transcript access.",
+    "Fetch a meeting's speaker-attributed transcript — the primary source for summaries, action items, and answers. Requires transcript access.",
     { meetingId: z.string() },
     async ({ meetingId }) => {
       if (!has("get_transcript")) return denied("get_transcript");
@@ -151,12 +148,14 @@ function buildMcpServer(db: Db, audit: AuditLog, user: User, scopes: string[]): 
     },
   );
   server.tool(
-    "get_action_items",
-    "List action items across the caller's accessible meetings.",
-    {},
-    async () => {
-      if (!has("get_action_items")) return denied("get_action_items");
-      return log("get_action_items"), json(mcpGetActionItems(db, user));
+    "get_notes",
+    "Fetch the caller's OWN typed notes for a meeting (never anyone else's). Combine with the transcript when summarizing.",
+    { meetingId: z.string() },
+    async ({ meetingId }) => {
+      if (!has("get_notes")) return denied("get_notes");
+      log("get_notes", meetingId);
+      const n = mcpGetNote(db, user, meetingId);
+      return n ? json(n) : json({ error: "not found or not accessible" });
     },
   );
   return server;
