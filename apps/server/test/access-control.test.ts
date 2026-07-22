@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { auth, login, makeCtx, recordMeeting } from "./helpers.js";
 
-const ALL_BAA = { assemblyai: true, awsBedrock: true, claudeWorkspace: true, microsoft: true };
+const ALL_BAA = { assemblyai: true, claudeWorkspace: true, microsoft: true };
 
 describe("RBAC — deny by default (spec §2.6.1, §2.7.2)", () => {
   it("attendees see the record exists but no content layers until shared", async () => {
@@ -89,7 +89,7 @@ describe("sharing & revocation (spec §2.7.2)", () => {
         method: "POST",
         url: `/meetings/${id}/shares`,
         headers: auth(dana),
-        payload: { layer: "summary", granteeUserId: "u_priya", permission: "view" },
+        payload: { layer: "transcript", granteeUserId: "u_priya", permission: "view" },
       })
     ).json().share;
 

@@ -29,15 +29,15 @@ describe("capture lifecycle", () => {
     expect(ok.json().meeting.status).toBe("recording");
   });
 
-  it("runs the full pipeline: transcript, attribution, insight", async () => {
+  it("runs the full pipeline: transcript, attribution, heuristic title", async () => {
     const ctx = makeCtx();
-    ctx.db.baa = { assemblyai: true, awsBedrock: true, claudeWorkspace: true, microsoft: true };
+    ctx.db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true };
     const t = await login(ctx, "dana@collective.dev");
     const id = await recordMeeting(ctx, t);
 
     const m = (await ctx.app.inject({ method: "GET", url: `/meetings/${id}`, headers: auth(t) })).json();
-    expect(m.meeting.ai.title).toBeTruthy();
-    expect(m.meeting.ai.actionItems.length).toBeGreaterThan(0);
+    expect(m.meeting.title).toBeTruthy(); // untitled → local heuristic (no AI job; D10)
+    expect(m.meeting.notice).toBeUndefined();
     expect(m.myLayers).toEqual(["summary", "notes", "transcript", "audio"]);
 
     const tr = (await ctx.app.inject({ method: "GET", url: `/meetings/${id}/transcript`, headers: auth(t) })).json();
@@ -55,7 +55,7 @@ describe("capture lifecycle", () => {
 
   it("manual correction re-labels a whole voice and is audit-logged", async () => {
     const ctx = makeCtx();
-    ctx.db.baa = { assemblyai: true, awsBedrock: true, claudeWorkspace: true, microsoft: true };
+    ctx.db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true };
     const t = await login(ctx, "dana@collective.dev");
     const id = await recordMeeting(ctx, t);
     const tr = (await ctx.app.inject({ method: "GET", url: `/meetings/${id}/transcript`, headers: auth(t) })).json();

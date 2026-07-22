@@ -4,7 +4,6 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AuditLog } from "./audit.js";
 import { buildApp } from "./http.js";
-import { makeInsight } from "./adapters/insight.js";
 import { makeTranscriber } from "./adapters/transcriber.js";
 import {
   DiskAudioStore,
@@ -46,16 +45,15 @@ if (tamperedAt >= 0) {
 audit.onEvent = (event) => appendAuditEvent(dataDir, event);
 
 const transcriber = makeTranscriber();
-const insight = makeInsight();
 
-// Local demo convenience: with mock adapters nothing leaves the machine, so
-// the BAA registry is pre-marked satisfied to show the full experience. With
-// REAL adapters the registry starts all-false and §6.6 gating fails safe —
-// flip entries in /admin (or seed via COLLECTIVE_BAA) only as executed BAAs
-// are filed (CP-1/CP-2/CP-4).
-if (transcriber.name === "mock" && insight.name === "mock") {
-  db.baa = { assemblyai: true, awsBedrock: true, claudeWorkspace: true, microsoft: true };
-  console.log("dev mode: mock adapters — BAA registry pre-set for local demo");
+// Local demo convenience: with the mock transcriber nothing leaves the
+// machine, so the BAA registry is pre-marked satisfied to show the full
+// experience. With a REAL adapter the registry starts all-false and §6.6
+// gating fails safe — flip entries in /admin (or seed via COLLECTIVE_BAA)
+// only as executed BAAs are filed (CP-1/CP-4).
+if (transcriber.name === "mock") {
+  db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true };
+  console.log("dev mode: mock transcriber — BAA registry pre-set for local demo");
 }
 
 const audioStore = new DiskAudioStore(dataDir);
@@ -69,7 +67,6 @@ const app = buildApp({
   db,
   audit,
   transcriber,
-  insight,
   audioStore,
   upstreamFactory,
   graph,
@@ -92,9 +89,9 @@ app
   .then(() => {
     console.log(`Collective server on :${port}`);
     console.log(
-      `  transcriber: ${transcriber.name}  insight: ${insight.name}  live-captions: ${
+      `  transcriber: ${transcriber.name}  live-captions: ${
         transcriber.name === "mock" ? "mock" : upstreamFactory ? "streaming relay" : "off"
-      }`,
+      }  summaries: via Claude connector (D10)`,
     );
     console.log(
       `  data: ${dataDir} (${restored ? `restored ${db.meetings.size} meeting(s), ${priorEvents.length} audit events` : "fresh"})`,

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { ConsentMechanism, Meeting, MeetingMode } from "@collective/shared";
+import type { ConsentMechanism, Meeting, MeetingMode, User } from "@collective/shared";
 import {
   ApiError,
   createMeeting,
+  nameLiveSpeaker,
   patchMeetingTitle,
   postChunk,
   postConsent,
@@ -17,6 +18,8 @@ import { startPcmStream, type PcmStreamer } from "../lib/pcm";
 import { blobToBase64, playConsentTone } from "../lib/audio";
 import { fmtClock } from "../lib/format";
 import { useNote } from "../lib/useNote";
+import { useUsers } from "../lib/useUsers";
+import { Avatar } from "../components/Avatar";
 import { NotesEditor } from "../components/NotesEditor";
 import { Waveform } from "../components/Waveform";
 
@@ -32,14 +35,101 @@ interface CaptionLine {
 const ANNOUNCEMENT_SCRIPT = "Quick note: I'm recording this meeting for notes — any objection?";
 const CHUNK_MS = 3000;
 
+/* --------------------- in-session speaker naming ------------------------ */
+
+/**
+ * Popover to name a live voice while the meeting runs — fixes "Speaker 2"
+ * (or a wrong guess) in real time; the assignment also carries into the final
+ * transcript as a manual correction.
+ */
+function LiveSpeakerPopover({
+  users,
+  currentName,
+  onPick,
+  onClose,
+}: {
+  users: User[];
+  currentName?: string;
+  onPick: (target: { userId?: string; guestLabel?: string }) => void;
+  onClose: () => void;
+}) {
+  const [guest, setGuest] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    ref.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="speaker-popover" role="dialog" aria-label="Who is this voice?" tabIndex={-1} ref={ref}>
+      <h3>Who is this voice?</h3>
+      {currentName && <p className="detail-muted">Currently: {currentName}</p>}
+      <ul className="popover-people">
+        {users
+          .filter((u) => !u.deactivated)
+          .map((u) => (
+            <li key={u.id}>
+              <button type="button" className="popover-person" onClick={() => onPick({ userId: u.id })}>
+                <Avatar user={u} />
+                {u.displayName}
+              </button>
+            </li>
+          ))}
+      </ul>
+      <div className="popover-guest">
+        <label htmlFor="live-guest-label" className="section-label">
+          Someone else (guest)
+        </label>
+        <div className="popover-guest-row">
+          <input
+            id="live-guest-label"
+            type="text"
+            placeholder="e.g. Visiting specialist"
+            value={guest}
+            onChange={(e) => setGuest(e.target.value)}
+          />
+          <button
+            type="button"
+            className="btn"
+            disabled={!guest.trim()}
+            onClick={() => onPick({ guestLabel: guest.trim() })}
+          >
+            Name guest
+          </button>
+        </div>
+      </div>
+      <button type="button" className="btn-quiet" onClick={onClose}>
+        Cancel
+      </button>
+    </div>
+  );
+}
+
 /* ------------------------- live transcript view ------------------------- */
 
-function LiveTranscript({ lines, liveCaptions }: { lines: CaptionLine[]; liveCaptions: boolean }) {
+function LiveTranscript({
+  lines,
+  liveCaptions,
+  speakers,
+  onNameSpeaker,
+}: {
+  lines: CaptionLine[];
+  liveCaptions: boolean;
+  speakers: Record<string, string>;
+  onNameSpeaker: (cluster: string, target: { userId?: string; guestLabel?: string }) => void;
+}) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
   const announceRef = useRef({ last: 0, queued: "" });
   const [announcement, setAnnouncement] = useState("");
+  const [namingCluster, setNamingCluster] = useState<string | null>(null);
+  const { users } = useUsers();
 
   // Stable "Speaker n" numbering by first appearance.
   const clusterOrder = useMemo(() => {
@@ -103,20 +193,42 @@ function LiveTranscript({ lines, liveCaptions }: { lines: CaptionLine[]; liveCap
               : "Recording is on. The transcript arrives shortly after you stop — live captions are coming in a future update."}
           </p>
         )}
-        {blocks.map((b, i) => (
-          <div className="live-block" key={`${b.cluster}-${i}`}>
-            <span className="speaker-chip speaker-chip-unknown speaker-chip-enter">
-              Speaker {clusterOrder.indexOf(b.cluster) + 1}
-            </span>
-            <div className="live-block-lines">
-              {b.lines.map((l) => (
-                <p key={l.key} className={`caption${l.interim ? " caption-interim" : ""}`}>
-                  {l.text}
-                </p>
-              ))}
+        {blocks.map((b, i) => {
+          const named = speakers[b.cluster];
+          const popKey = `${b.cluster}-${i}`;
+          return (
+            <div className="live-block" key={popKey}>
+              <span className="live-block-speaker">
+                <button
+                  type="button"
+                  className={`speaker-chip speaker-chip-enter${named ? "" : " speaker-chip-unknown"}`}
+                  title="Tap to name this voice"
+                  onClick={() => setNamingCluster(namingCluster === popKey ? null : popKey)}
+                >
+                  {named ?? `Speaker ${clusterOrder.indexOf(b.cluster) + 1}`}
+                </button>
+                {namingCluster === popKey && (
+                  <LiveSpeakerPopover
+                    users={users}
+                    currentName={named}
+                    onPick={(target) => {
+                      setNamingCluster(null);
+                      onNameSpeaker(b.cluster, target);
+                    }}
+                    onClose={() => setNamingCluster(null)}
+                  />
+                )}
+              </span>
+              <div className="live-block-lines">
+                {b.lines.map((l) => (
+                  <p key={l.key} className={`caption${l.interim ? " caption-interim" : ""}`}>
+                    {l.text}
+                  </p>
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       {showJump && (
         <button type="button" className="jump-live-pill" onClick={jumpToLive}>
@@ -142,6 +254,7 @@ export function CapturePage() {
   const [busy, setBusy] = useState(false);
   const [lines, setLines] = useState<CaptionLine[]>([]);
   const [liveCaptions, setLiveCaptions] = useState(true);
+  const [speakers, setSpeakers] = useState<Record<string, string>>({});
   const [elapsed, setElapsed] = useState(0);
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const [notesOpen, setNotesOpen] = useState(false);
@@ -290,7 +403,9 @@ export function CapturePage() {
       {
         onEvent: (event, data) => {
           if (event === "caption") onCaption(data);
-          else if (event === "status") {
+          else if (event === "speakers" && data && typeof data === "object") {
+            setSpeakers(data as Record<string, string>);
+          } else if (event === "status") {
             const payload = data as { status?: string; liveCaptions?: boolean };
             if (typeof payload?.liveCaptions === "boolean") setLiveCaptions(payload.liveCaptions);
             const s = payload?.status;
@@ -355,6 +470,15 @@ export function CapturePage() {
 
   const addMarker = () => {
     note.appendLine(`[t=${Math.round(elapsedNow())}] Marker`);
+  };
+
+  const handleNameSpeaker = async (cluster: string, target: { userId?: string; guestLabel?: string }) => {
+    if (!meeting) return;
+    try {
+      setSpeakers(await nameLiveSpeaker(meeting.id, { cluster, ...target }));
+    } catch {
+      /* chip keeps its old label; the popover can be reopened */
+    }
   };
 
   const stop = async () => {
@@ -485,7 +609,12 @@ export function CapturePage() {
 
       {(isLive || phase === "stopping") && (
         <div className="capture-body">
-          <LiveTranscript lines={lines} liveCaptions={liveCaptions} />
+          <LiveTranscript
+            lines={lines}
+            liveCaptions={liveCaptions}
+            speakers={speakers}
+            onNameSpeaker={(cluster, target) => void handleNameSpeaker(cluster, target)}
+          />
           <aside className={`notes-pane${notesOpen ? " notes-pane-open" : ""}`}>
             <NotesEditor body={note.body} onChange={note.setBody} saveState={note.saveState} rows={14} />
           </aside>

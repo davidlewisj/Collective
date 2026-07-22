@@ -465,6 +465,12 @@
   margin-bottom: var(--space-2);
 }
 
+/* Anchor for the in-session naming popover on a live speaker chip. */
+.live-block-speaker {
+  position: relative;
+  display: inline-block;
+}
+
 .live-block-lines {
   padding-left: var(--space-2);
 }
@@ -658,11 +664,8 @@
   margin-bottom: var(--space-3);
 }
 
-.summary-text {
-  font: var(--type-body);
-}
-
-.summary-skipped {
+/* Degraded-state note on a meeting record (objection, PHI gate, error). */
+.meeting-notice {
   font: var(--type-body-sm);
   color: var(--c-state-processing);
   background: color-mix(in srgb, var(--c-state-processing) 10%, transparent);
@@ -675,39 +678,24 @@
   color: var(--c-sage);
 }
 
-/* action items */
+/* "Ask Claude" card — the connector is how summaries happen (D10). */
 
-.action-list {
+.ask-claude-row {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+  align-items: flex-start;
+  gap: var(--space-3);
 }
 
-.action-item {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  padding: var(--space-2) 0;
-}
-
-.action-item label {
-  font: var(--type-body);
-  transition: color var(--motion-fast) var(--motion-ease-standard);
-}
-
-.action-done label {
-  color: var(--c-sage);
-  text-decoration: line-through;
-}
-
-.verify-badge {
-  font: var(--type-caption);
-  color: var(--c-state-processing);
-  background: color-mix(in srgb, var(--c-state-processing) 12%, transparent);
-  border-radius: var(--radius-pill);
-  padding: var(--space-1) var(--space-2);
-  cursor: help;
+.ask-claude-prompt {
+  flex: 1;
+  font: var(--type-mono-sm);
+  color: var(--c-ink);
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-mist);
+  border-radius: var(--radius-card);
+  padding: var(--space-3);
+  margin: 0;
+  user-select: all;
 }
 
 /* transcript */

@@ -27,7 +27,7 @@ describe("durable persistence", () => {
   it("round-trips full domain state through a snapshot (simulated restart)", async () => {
     const dir = tempDir();
     const ctx = makeCtx();
-    ctx.db.baa = { assemblyai: true, awsBedrock: true, claudeWorkspace: true, microsoft: true };
+    ctx.db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true };
     const t = await login(ctx, "dana@collective.dev");
     const id = await recordMeeting(ctx, t);
     await ctx.app.inject({
@@ -49,7 +49,7 @@ describe("durable persistence", () => {
     seedUsers(db2);
     expect(new StateSnapshotStore(dir, db2).load()).toBe(true);
     expect(db2.meetings.get(id)?.status).toBe("ready");
-    expect(db2.meetings.get(id)?.ai?.title).toBeTruthy();
+    expect(db2.meetings.get(id)?.title).toBeTruthy();
     expect(db2.utterances.get(id)?.length).toBeGreaterThan(0);
     expect(db2.notes.get(`${id}:u_dana`)?.body).toContain("survive restart");
     expect([...db2.shares.values()].some((s) => s.granteeUserId === "u_priya")).toBe(true);

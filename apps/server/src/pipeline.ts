@@ -1,15 +1,19 @@
 /**
  * Meeting lifecycle pipeline (design-spec §3.2): stop → transcribe →
- * attribute → insight (with the §6.6 BAA gate) → ready. Also the SSE hub for
- * live captions during capture.
+ * attribute (incl. names assigned live during capture) → ready. Also the SSE
+ * hub for live captions during capture.
+ *
+ * There is no backend summary job (decision D10): summaries, action items,
+ * and Q&A happen in the user's own Claude through the MCP connector, so the
+ * only Claude-bound egress left in this codebase is the connector itself
+ * (§6.6-gated in mcp.ts). Untitled meetings get a local heuristic title.
  */
-import { AiOutputs, Meeting, User, Utterance } from "@collective/shared";
-import { attribute } from "./attribution.js";
+import { Meeting, User, Utterance } from "@collective/shared";
+import { applyLiveAssignments, attribute } from "./attribution.js";
 import { AuditLog } from "./audit.js";
-import { Insight, MockInsight } from "./adapters/insight.js";
 import { MockTranscriber, Transcriber } from "./adapters/transcriber.js";
-import { insightEgressAllowed, transcriptionEgressAllowed } from "./policy.js";
-import { Db } from "./store.js";
+import { transcriptionEgressAllowed } from "./policy.js";
+import { Db, recordLiveTurn } from "./store.js";
 
 type SseSink = (event: string, data: unknown) => void;
 
@@ -41,11 +45,26 @@ export function speakerNameFn(db: Db, utts: Utterance[]): (u: Utterance) => stri
   };
 }
 
+/** Resolve the live speaker-name map for SSE ("speakers" events). */
+export function liveSpeakerNames(db: Db, meetingId: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [cluster, a] of Object.entries(db.liveSpeakers.get(meetingId) ?? {})) {
+    const name = a.userId ? db.users.get(a.userId)?.displayName : a.guestLabel;
+    if (name) out[cluster] = name;
+  }
+  return out;
+}
+
+/** Local heuristic title for untitled meetings — no vendor involved. */
+function deriveTitle(utterances: Utterance[]): string {
+  const first = utterances.find((u) => u.text.trim().length > 0);
+  return first ? first.text.slice(0, 56) : "Untitled meeting";
+}
+
 export interface PipelineDeps {
   db: Db;
   audit: AuditLog;
   transcriber: Transcriber;
-  insight: Insight;
   hub: LiveHub;
   /** Raw audio for the meeting, assembled from chunks (dev slice: in memory). */
   audioFor: (meetingId: string) => Buffer;
@@ -70,15 +89,9 @@ export async function runPostMeetingPipeline(deps: PipelineDeps, meeting: Meetin
         detail: "PHI-flagged (or fail-safe) and no AssemblyAI BAA in the registry",
       });
       db.utterances.set(meeting.id, []);
-      meeting.ai = {
-        title: meeting.title || `Meeting ${new Date().toLocaleDateString("en-US")}`,
-        summary: "",
-        actionItems: [],
-        model: "none",
-        generatedAt: new Date().toISOString(),
-        skippedReason:
-          "Transcript unavailable — flagged as patient info and no AssemblyAI BAA on file. Audio is preserved; an admin can record the BAA in Admin → BAA registry, then reprocess this meeting.",
-      };
+      if (!meeting.title) meeting.title = `Meeting ${new Date().toLocaleDateString("en-US")}`;
+      meeting.notice =
+        "Transcript unavailable — flagged as patient info and no AssemblyAI BAA on file. Audio is preserved; an admin can record the BAA in Admin → BAA registry, then reprocess this meeting.";
       meeting.status = "ready";
       hub.emit(meeting.id, "status", { status: "ready", degraded: true });
       return;
@@ -95,87 +108,51 @@ export async function runPostMeetingPipeline(deps: PipelineDeps, meeting: Meetin
       detail: `${deps.transcriber.name}: ${raw.length} utterances`,
     });
 
-    const attributed = attribute(db, meeting, raw);
+    let attributed = attribute(db, meeting, raw);
+
+    // Names assigned live during capture are manual evidence — they always
+    // win. Live and batch diarization are separate runs, so clusters are
+    // matched by transcript-text overlap (label identity as fallback).
+    const liveAssignments = db.liveSpeakers.get(meeting.id);
+    if (liveAssignments && Object.keys(liveAssignments).length > 0) {
+      const applied = applyLiveAssignments(attributed, liveAssignments, db.liveTurns.get(meeting.id) ?? []);
+      attributed = applied.utterances;
+      if (applied.appliedClusters.length > 0) {
+        audit.emit({
+          actorUserId: actor.id,
+          action: "attribution.live_names_applied",
+          meetingId: meeting.id,
+          detail: `clusters: ${applied.appliedClusters.join(", ")}`,
+        });
+      }
+    }
+    db.liveSpeakers.delete(meeting.id);
+    db.liveTurns.delete(meeting.id);
+
     db.utterances.set(meeting.id, attributed);
 
-    meeting.ai = await generateInsight(deps, meeting, attributed, actor);
+    if (!meeting.title) meeting.title = deriveTitle(attributed);
+    meeting.notice = undefined; // clean run — clear any stale degraded note
     meeting.status = "ready";
-    if (!meeting.title && meeting.ai) meeting.title = meeting.ai.title;
     hub.emit(meeting.id, "status", { status: "ready" });
   } catch (err) {
     // Honest failure surface (spec §7.5): keep the record, mark ready with a
-    // heuristic title; audio is preserved for reprocessing.
+    // note; audio is preserved for reprocessing.
     meeting.status = "ready";
-    meeting.ai = {
-      title: meeting.title || "Untitled meeting",
-      summary: "",
-      actionItems: [],
-      model: "none",
-      generatedAt: new Date().toISOString(),
-      skippedReason: `pipeline_error: ${(err as Error).message}`,
-    };
+    if (!meeting.title) meeting.title = "Untitled meeting";
+    meeting.notice = `Processing hit an error (${(err as Error).message}). Audio is preserved — try reprocessing from the meeting page.`;
     hub.emit(meeting.id, "status", { status: "ready", degraded: true });
     audit.emit({ actorUserId: actor.id, action: "pipeline.error", meetingId: meeting.id, detail: String(err) });
   }
 }
 
-export async function generateInsight(
-  deps: PipelineDeps,
-  meeting: Meeting,
-  utts: Utterance[],
-  actor: User,
-): Promise<AiOutputs> {
-  const { db, audit } = deps;
-  const attendees = [meeting.ownerUserId, ...meeting.attendeeUserIds]
-    .map((id) => db.users.get(id))
-    .filter((u): u is User => !!u);
-  const speakerName = speakerNameFn(db, utts);
-
-  // §6.6 gate: PHI-effective meeting with no Bedrock BAA on file → the Claude
-  // job is skipped and a local heuristic fills in.
-  if (!insightEgressAllowed(db, meeting)) {
-    audit.emit({
-      actorUserId: actor.id,
-      action: "insight.skipped_phi_gate",
-      meetingId: meeting.id,
-      detail: "PHI-flagged (or fail-safe) and no AWS/Bedrock BAA in the registry",
-    });
-    return {
-      title: meeting.title || `Meeting ${new Date().toLocaleDateString("en-US")}`,
-      summary: "",
-      actionItems: [],
-      model: "none",
-      generatedAt: new Date().toISOString(),
-      skippedReason: "AI summary unavailable — flagged as patient info (no BAA on file)",
-    };
-  }
-
-  const note = db.notes.get(`${meeting.id}:${actor.id}`);
-  const engine = deps.insight;
-  const payloadManifest = `layers=[transcript${note ? ",author_notes" : ""}] engine=${engine.name}`;
-  audit.emit({ actorUserId: actor.id, action: "insight.sent", meetingId: meeting.id, detail: payloadManifest });
-  try {
-    return await engine.generate({ meeting, utterances: utts, authorNotes: note?.body, attendees, speakerName });
-  } catch (err) {
-    // Vendor failure → local fallback (backlog SUM-4).
-    audit.emit({ actorUserId: actor.id, action: "insight.fallback", meetingId: meeting.id, detail: String(err) });
-    const fallback = await new MockInsight().generate({
-      meeting,
-      utterances: utts,
-      authorNotes: note?.body,
-      attendees,
-      speakerName,
-    });
-    return { ...fallback, skippedReason: "AI summary temporarily unavailable — heuristic summary shown" };
-  }
-}
-
 export function liveCaptionOnChunk(deps: PipelineDeps, meeting: Meeting, seq: number): void {
   // Dev-slice live captions: the mock transcriber scripts one line per chunk.
-  // Production: streaming relay to AssemblyAI v3 WebSocket (backlog IN-2).
+  // Production: streaming relay to AssemblyAI v3 WebSocket (relay.ts).
   if (deps.transcriber instanceof MockTranscriber) {
     const line = deps.transcriber.liveCaptionForChunk(seq);
     if (line) {
+      recordLiveTurn(deps.db, meeting.id, line.cluster, line.text);
       deps.hub.emit(meeting.id, "caption", {
         cluster: line.cluster,
         text: line.text,

@@ -18,9 +18,10 @@ Every content read is audit-logged server-side. All list/detail responses are AC
 | POST `/meetings/:id/consent` | `{mechanism, detail?}` → `{meeting}` | Records a consent artifact |
 | POST `/meetings/:id/start` | → `{meeting}` | **409 `consent_required`** until policy satisfied (spec §2.6.2) |
 | POST `/meetings/:id/chunks` | `{seq, dataBase64}` → `{received}` | Audio chunk during recording |
-| GET `/meetings/:id/live` | Server-Sent Events | `caption` events (live turns with cluster labels), `status` events (incl. `liveCaptions` flag) |
+| GET `/meetings/:id/live` | Server-Sent Events | `caption` events (live turns with cluster labels), `status` events (incl. `liveCaptions` flag), `speakers` events (cluster→name map from in-session naming) |
+| POST `/meetings/:id/live/speaker` | `{cluster, userId?\|guestLabel?}` → `{speakers}` | Owner, while recording: name a live voice in real time; carries into the final transcript as manual attribution (live↔batch clusters matched by text overlap) |
 | WS `/meetings/:id/stream` | `?token=&rate=16000`; binary PCM16 frames up | Live-caption streaming relay → AssemblyAI v3 (owner only, while recording; §6.6-gated; token as query param because browser WS can't set headers) |
-| POST `/meetings/:id/stop` | → `{meeting}` | → `processing`; pipeline: transcribe → attribute → insight; → `ready` |
+| POST `/meetings/:id/stop` | → `{meeting}` | → `processing`; pipeline: transcribe → attribute (incl. live-assigned names); → `ready`. No summary job — summaries are asked of Claude via the connector (D10) |
 | POST `/meetings/:id/objection` | → `{meeting}` | Stops + deletes audio, keeps notes (spec §2.6.2 objection path) |
 | GET `/meetings/:id/transcript` | → `{utterances}` | Requires transcript access |
 | POST `/meetings/:id/utterances/:uid/speaker` | `{userId?|guestLabel?, scope: "line"\|"voice"}` → `{utterances}` | Manual correction; audit-logged |
@@ -36,11 +37,11 @@ Every content read is audit-logged server-side. All list/detail responses are AC
 | GET `/me/settings` · PUT same | `{calendarIcsUrl}` → `{settings}` | Per-user; ICS feed powers calendar naming on untitled captures |
 | GET `/me/calendar-preview` | → `{event}` or 404 | Settings "Test": what a capture started now would be named |
 | GET/POST/DELETE `/me/connector-token` | POST → `{token}` (shown once, `mcp_…`) | Long-lived Claude connector token; authenticates **`/mcp` only**; mint replaces, delete revokes |
-| GET `/admin/baa-registry` · PUT same | body `{assemblyai, awsBedrock, claudeWorkspace, microsoft}` → response `{baa}` | org_admin; drives §6.6 gating |
+| GET `/admin/baa-registry` · PUT same | body `{assemblyai, claudeWorkspace, microsoft}` → response `{baa}` | org_admin; drives §6.6 gating |
 | GET `/admin/consent-policy` · PUT same | body `{requiredMechanisms, phiFailSafe}` → response `{policy}` | org_admin |
 | GET `/admin/retention` · PUT same | body `{audioDays, transcriptDays, auditDays}` → response `{retention}` | org_admin |
 
-**MCP server:** `POST /mcp` — Model Context Protocol (Streamable HTTP), tools `search_meetings`, `list_meetings`, `get_meeting`, `get_transcript`, `get_action_items`. Results are ACL-filtered per caller and PHI-flag-gated per the BAA registry (spec §6.3, §6.6). No audio, no cross-user notes, no writes. Accepts three credentials: an OAuth 2.1 access token (below), a long-lived connector token (`mcp_…`), or a normal session bearer. An unauthenticated request gets **401** with `WWW-Authenticate: Bearer resource_metadata="…"` (RFC 9728). Each tool is gated on a scope (`search_meetings`→`meetings.search`, `get_transcript`→`transcripts.read`, the rest→`meetings.read`).
+**MCP server:** `POST /mcp` — Model Context Protocol (Streamable HTTP), tools `search_meetings`, `list_meetings`, `get_meeting`, `get_transcript`, `get_notes` (caller's own note only). Post-D10 this is THE summary/Q&A surface: Claude reads the transcript + the caller's notes and produces summaries/action items on demand. Results are ACL-filtered per caller and PHI-flag-gated per the BAA registry (spec §6.3, §6.6). No audio, no cross-user notes, no writes. Accepts three credentials: an OAuth 2.1 access token (below), a long-lived connector token (`mcp_…`), or a normal session bearer. An unauthenticated request gets **401** with `WWW-Authenticate: Bearer resource_metadata="…"` (RFC 9728). Each tool is gated on a scope (`search_meetings`→`meetings.search`, `get_transcript`→`transcripts.read`, the rest→`meetings.read`).
 
 **MCP OAuth 2.1 (spec §6.4 — claude.ai custom connector):** the server is the authorization + resource server for `/mcp`. Dynamic client registration is disabled; an org_admin mints an allowlisted client and enters its id/secret into Claude.
 
@@ -55,7 +56,7 @@ Every content read is audit-logged server-side. All list/detail responses are AC
 | GET/POST/DELETE `/admin/oauth-clients[/:id]` | POST `{name, redirectUris}` → `{client, clientSecret}` (secret shown once) | org_admin; the allowlist; DELETE revokes the client and its tokens |
 
 **§6.6 gating semantics (server-enforced):**
-- Insight (summary) job: if `phiEffective(meeting)` and `!baa.awsBedrock` → job skipped, heuristic title, `ai.skippedReason` set.
+- Real-vendor transcription: if `phiEffective(meeting)` and `!baa.assemblyai` → audio never leaves; `meeting.notice` explains; reprocess after the registry flips.
 - MCP tools: if `phiEffective(meeting)` and `!baa.claudeWorkspace` → meeting excluded from every result.
 - `phiEffective` = `phiFlag === true`, or (`phiFlag === null` and `consentPolicy.phiFailSafe`).
 

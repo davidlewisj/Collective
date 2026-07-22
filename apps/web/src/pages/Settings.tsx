@@ -124,7 +124,8 @@ function ConnectClaudeCard() {
     <section className="admin-card admin-card-wide">
       <h2 className="section-heading">Connect Claude Desktop</h2>
       <p className="admin-hint">
-        Let Claude answer questions from your meeting archive ("what did we decide about the intake forms?").
+        This is how you get summaries, action items, and answers from your meeting archive — ask Claude
+        ("summarize yesterday's huddle", "what did we decide about the intake forms?").
         Generate a connector token, add the snippet below to Claude Desktop's config file
         (%APPDATA%\Claude\claude_desktop_config.json on Windows), restart Claude Desktop, and ask away. The token
         only reaches the archive tools — never audio, never other people's notes — every request is permission-

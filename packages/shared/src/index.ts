@@ -82,26 +82,6 @@ export interface Utterance {
   evidence?: AttributionEvidence;
 }
 
-export interface ActionItem {
-  id: string;
-  text: string;
-  /** Assignee must come from the attendee list or be absent (spec §6.1). */
-  assigneeUserId?: string;
-  done: boolean;
-  /** Utterance ids supporting this item; empty => render "verify" affordance. */
-  sourceUtteranceIds: string[];
-}
-
-export interface AiOutputs {
-  title: string;
-  summary: string;
-  actionItems: ActionItem[];
-  model: string; // e.g. "anthropic.claude-sonnet-5" or "mock"
-  generatedAt: string;
-  /** Set when the Claude job was skipped (PHI flag without BAA — spec §6.6). */
-  skippedReason?: string;
-}
-
 export interface Meeting {
   id: string;
   entityId: string;
@@ -114,11 +94,16 @@ export interface Meeting {
   attendeeUserIds: string[];
   phiFlag: PhiFlag;
   consent: ConsentArtifact[];
-  ai?: AiOutputs;
   audioChunks: number;
   createdAt: string;
   /** Title/attendees were pre-filled from the owner's calendar feed. */
   namedFromCalendar?: boolean;
+  /**
+   * Honest degraded-state note shown on the record (spec §7.5) — e.g. an
+   * objection deleted the audio, or the PHI gate blocked transcription.
+   * Summaries themselves are connector-territory (D10): users ask Claude.
+   */
+  notice?: string;
 }
 
 export interface Note {
@@ -144,7 +129,6 @@ export interface AuditEvent {
 
 export interface BaaRegistry {
   assemblyai: boolean;
-  awsBedrock: boolean;
   /** HIPAA-ready Claude workspace BAA — gates PHI-flagged meetings on the MCP/connector surface (spec §6.6). */
   claudeWorkspace: boolean;
   microsoft: boolean;

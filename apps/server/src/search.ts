@@ -32,12 +32,6 @@ export function search(db: Db, user: User, q: string): SearchHit[] {
     if (m.title.toLowerCase().includes(needle)) {
       hits.push({ meetingId: m.id, title: m.title, layer: "title", snippet: m.title });
     }
-    if (can(db, user, "read", m, "summary") && m.ai) {
-      const text = `${m.ai.summary} ${m.ai.actionItems.map((a) => a.text).join(" ")}`;
-      if (text.toLowerCase().includes(needle)) {
-        hits.push({ meetingId: m.id, title: m.title, layer: "summary", snippet: snippetAround(text, q) });
-      }
-    }
     if (can(db, user, "read", m, "transcript")) {
       for (const u of db.utterances.get(m.id) ?? []) {
         if (u.text.toLowerCase().includes(needle)) {

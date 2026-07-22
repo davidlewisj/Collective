@@ -28,6 +28,7 @@ import {
   LiveHub,
   PipelineDeps,
   liveCaptionOnChunk,
+  liveSpeakerNames,
   runPostMeetingPipeline,
   speakerNameFn,
 } from "./pipeline.js";
@@ -36,7 +37,6 @@ import { Db, linkOrProvisionUser, newId, userByEmail } from "./store.js";
 import { MsGraph } from "./msgraph.js";
 import { OAUTH_SCOPES, OAuthProvider } from "./oauth.js";
 import { webOrigin as resolveWebOrigin } from "./config.js";
-import { Insight } from "./adapters/insight.js";
 import { Transcriber } from "./adapters/transcriber.js";
 import { AudioStore, MemoryAudioStore } from "./persist.js";
 import { IcsFetcher, currentCalendarEvent, httpIcsFetcher } from "./calendar.js";
@@ -47,7 +47,6 @@ export interface AppDeps {
   db: Db;
   audit: AuditLog;
   transcriber: Transcriber;
-  insight: Insight;
   /** Defaults to in-memory; main.ts passes the disk store. */
   audioStore?: AudioStore;
   /** Live-caption vendor socket factory (relay.ts); null/absent = no live vendor captions. */
@@ -532,10 +531,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   app.get("/meetings/:id", async (req, reply) => {
     const m = getMeeting(req, reply, (req.params as { id: string }).id);
     audit.emit({ actorUserId: req.user.id, action: "meeting.read", meetingId: m.id, layer: "record" });
-    const myLayers = readableLayers(db, req.user, m);
-    const view = { ...m };
-    if (!myLayers.includes("summary")) view.ai = undefined;
-    return { meeting: view, myLayers };
+    return { meeting: m, myLayers: readableLayers(db, req.user, m) };
   });
 
   app.patch("/meetings/:id", async (req, reply) => {
@@ -612,9 +608,42 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       status: m.status,
       liveCaptions: deps.transcriber.name === "mock" || relay.available(m),
     });
+    // Names already assigned this session, so a (re)joining client renders them.
+    const names = liveSpeakerNames(db, m.id);
+    if (Object.keys(names).length > 0) sink("speakers", names);
     const unsub = hub.subscribe(m.id, sink);
     req.raw.on("close", unsub);
     return reply; // stream held open
+  });
+
+  app.post("/meetings/:id/live/speaker", async (req, reply) => {
+    // In-session speaker naming: fix "Speaker 2" (or a wrong guess) while the
+    // meeting is still running. Applies to the live captions immediately and
+    // becomes manual attribution evidence when the transcript is built.
+    const m = getMeeting(req, reply, (req.params as { id: string }).id);
+    if (m.ownerUserId !== req.user.id) return fail(reply, 403, "owner only");
+    if (m.status !== "recording") return fail(reply, 409, "not recording");
+    const body = z
+      .object({
+        cluster: z.string().min(1).max(40),
+        userId: z.string().optional(),
+        guestLabel: z.string().max(80).optional(),
+      })
+      .refine((b) => !!b.userId !== !!b.guestLabel, "exactly one of userId | guestLabel")
+      .parse(req.body);
+    if (body.userId && !db.users.has(body.userId)) return fail(reply, 400, "unknown user");
+    const map = db.liveSpeakers.get(m.id) ?? {};
+    map[body.cluster] = body.userId ? { userId: body.userId } : { guestLabel: body.guestLabel };
+    db.liveSpeakers.set(m.id, map);
+    audit.emit({
+      actorUserId: req.user.id,
+      action: "live.speaker_named",
+      meetingId: m.id,
+      detail: `${body.cluster} → ${body.userId ?? `guest:${body.guestLabel}`}`,
+    });
+    const speakers = liveSpeakerNames(db, m.id);
+    hub.emit(m.id, "speakers", speakers);
+    return { speakers };
   });
 
   app.post("/meetings/:id/stop", async (req, reply) => {
@@ -627,7 +656,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   });
 
   app.post("/meetings/:id/reprocess", async (req, reply) => {
-    // Re-run transcription + insight from preserved audio — e.g. after the
+    // Re-run transcription/attribution from preserved audio — e.g. after the
     // BAA registry changes or a vendor outage (§6.6; backlog SUM-4).
     const m = getMeeting(req, reply, (req.params as { id: string }).id);
     if (m.ownerUserId !== req.user.id) return fail(reply, 403, "owner only");
@@ -647,14 +676,10 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     audioStore.delete(m.id);
     m.audioChunks = 0;
     db.utterances.delete(m.id);
-    m.ai = {
-      title: m.title || "Meeting (recording declined)",
-      summary: "",
-      actionItems: [],
-      model: "none",
-      generatedAt: new Date().toISOString(),
-      skippedReason: "A participant objected — audio and transcript were not kept. Your typed notes are preserved.",
-    };
+    db.liveSpeakers.delete(m.id);
+    db.liveTurns.delete(m.id);
+    if (!m.title) m.title = "Meeting (recording declined)";
+    m.notice = "A participant objected — audio and transcript were not kept. Your typed notes are preserved.";
     audit.emit({ actorUserId: req.user.id, action: "consent.objection_honored", meetingId: m.id });
     return { meeting: m };
   });
@@ -870,7 +895,6 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     db.baa = z
       .object({
         assemblyai: z.boolean(),
-        awsBedrock: z.boolean(),
         claudeWorkspace: z.boolean(),
         microsoft: z.boolean(),
       })

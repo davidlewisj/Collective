@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
-import type { ActionItem, Meeting, ShareGrant, ShareLayer, User, Utterance } from "@collective/shared";
+import type { Meeting, ShareGrant, ShareLayer, User, Utterance } from "@collective/shared";
 import {
   correctSpeaker,
   fetchAudioBlob,
@@ -73,50 +73,38 @@ function PhiChip({
   );
 }
 
-/* ----------------------------- action items ----------------------------- */
+/* ------------------------------ ask Claude ------------------------------ */
 
-function ActionItems({
-  items,
-  byId,
-}: {
-  items: ActionItem[];
-  byId: Map<string, User>;
-}) {
-  // No update endpoint in the API contract — checkbox state is view-local.
-  const [done, setDone] = useState<Record<string, boolean>>({});
-  if (items.length === 0) return <p className="detail-muted">No action items were found.</p>;
+/**
+ * Summaries and action items are connector-territory (D10): the user asks
+ * their own Claude, which reads this meeting through the MCP connector. This
+ * card hands them a ready-made prompt.
+ */
+function AskClaudeCard({ meeting }: { meeting: Meeting }) {
+  const [copied, setCopied] = useState(false);
+  const when = new Date(meeting.startedAt ?? meeting.createdAt).toLocaleDateString("en-US");
+  const prompt = `Using the Collective connector, summarize the meeting "${meeting.title || "Untitled meeting"}" (${when}): key points, decisions, and action items with owners. Use the transcript and my notes.`;
+
   return (
-    <ul className="action-list">
-      {items.map((a) => {
-        const isDone = done[a.id] ?? a.done;
-        const assignee = a.assigneeUserId ? byId.get(a.assigneeUserId) : undefined;
-        return (
-          <li key={a.id} className={`action-item${isDone ? " action-done" : ""}`}>
-            <input
-              type="checkbox"
-              id={`ai-${a.id}`}
-              checked={isDone}
-              onChange={(e) => setDone((d) => ({ ...d, [a.id]: e.target.checked }))}
-            />
-            <label htmlFor={`ai-${a.id}`}>{a.text}</label>
-            {assignee && (
-              <span className="person-chip">
-                <Avatar user={assignee} />
-                <span>{assignee.displayName}</span>
-              </span>
-            )}
-            {a.sourceUtteranceIds.length === 0 && (
-              <span
-                className="verify-badge"
-                title="No transcript line backs this item — verify it before relying on it."
-              >
-                Verify
-              </span>
-            )}
-          </li>
-        );
-      })}
-    </ul>
+    <section className="detail-section">
+      <h2 className="section-heading">Summary &amp; action items</h2>
+      <p className="detail-muted">
+        Ask Claude — it reads this meeting's transcript and your notes through your Collective connector
+        and answers with exactly what you need. Set it up once in Settings → Connect Claude.
+      </p>
+      <div className="ask-claude-row">
+        <p className="ask-claude-prompt mono">{prompt}</p>
+        <button
+          type="button"
+          className="btn-quiet"
+          onClick={() => {
+            void navigator.clipboard.writeText(prompt).then(() => setCopied(true));
+          }}
+        >
+          {copied ? "Copied" : "Copy prompt"}
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -602,12 +590,8 @@ export function MeetingDetailPage() {
         <>
           <Skeleton lines={1} />
           <section className="detail-section">
-            <h2 className="section-heading">Summary</h2>
+            <h2 className="section-heading">Transcript</h2>
             <Skeleton lines={3} />
-          </section>
-          <section className="detail-section">
-            <h2 className="section-heading">Action items</h2>
-            <Skeleton lines={2} />
           </section>
         </>
       ) : (
@@ -625,21 +609,12 @@ export function MeetingDetailPage() {
             onChange={(e) => setTitle(e.target.value)}
             onBlur={() => void saveTitle()}
           />
-          <section className={sectionClass} style={sectionStyle(1)}>
-            <h2 className="section-heading">Summary</h2>
-            {meeting.ai?.skippedReason && (
-              <p className="summary-skipped">{meeting.ai.skippedReason}</p>
-            )}
-            {meeting.ai?.summary ? (
-              <p className="summary-text">{meeting.ai.summary}</p>
-            ) : (
-              !meeting.ai?.skippedReason && <p className="detail-muted">No summary yet.</p>
-            )}
-          </section>
-          <section className={sectionClass} style={sectionStyle(2)}>
-            <h2 className="section-heading">Action items</h2>
-            <ActionItems items={meeting.ai?.actionItems ?? []} byId={byId} />
-          </section>
+          {meeting.notice && (
+            <p className="meeting-notice" role="status">
+              {meeting.notice}
+            </p>
+          )}
+          <AskClaudeCard meeting={meeting} />
         </>
       )}
 

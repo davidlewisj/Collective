@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { AuditLog } from "../src/audit.js";
 import { buildApp } from "../src/http.js";
-import { MockInsight } from "../src/adapters/insight.js";
 import { MockTranscriber } from "../src/adapters/transcriber.js";
 import { OAuthProvider } from "../src/oauth.js";
 import { createDb, seedUsers } from "../src/store.js";
@@ -31,7 +30,6 @@ function makeCtx() {
     db,
     audit,
     transcriber: new MockTranscriber(),
-    insight: new MockInsight(),
     oauth,
     webDir: fixtureWebDir(),
     webOrigin: "http://localhost:4000",

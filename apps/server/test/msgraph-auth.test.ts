@@ -2,7 +2,6 @@ import { generateKeyPairSync, createSign } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { AuditLog } from "../src/audit.js";
 import { buildApp } from "../src/http.js";
-import { MockInsight } from "../src/adapters/insight.js";
 import { MockTranscriber } from "../src/adapters/transcriber.js";
 import { HttpJson, MsGraph } from "../src/msgraph.js";
 import { createDb, seedUsers } from "../src/store.js";
@@ -104,7 +103,6 @@ function makeGraphCtx(opts: { email: string; name: string; oid: string; calendar
     db,
     audit,
     transcriber: new MockTranscriber(),
-    insight: new MockInsight(),
     graph,
     webOrigin: "http://localhost:5173",
   });
@@ -121,7 +119,6 @@ function ctxWithIdToken(idToken: string) {
     db,
     audit,
     transcriber: new MockTranscriber(),
-    insight: new MockInsight(),
     graph,
     webOrigin: "http://localhost:5173",
   });

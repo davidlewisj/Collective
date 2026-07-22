@@ -1,7 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { AuditLog } from "../src/audit.js";
 import { buildApp } from "../src/http.js";
-import { MockInsight } from "../src/adapters/insight.js";
 import { MockTranscriber } from "../src/adapters/transcriber.js";
 import { Transcriber } from "../src/adapters/transcriber.js";
 import { createDb, Db, seedUsers } from "../src/store.js";
@@ -20,7 +19,6 @@ export function makeCtx(overrides: { transcriber?: Transcriber } = {}): Ctx {
     db,
     audit,
     transcriber: overrides.transcriber ?? new MockTranscriber(),
-    insight: new MockInsight(),
   });
   return { app, db, audit };
 }

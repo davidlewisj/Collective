@@ -113,6 +113,83 @@ export function attribute(db: Db, meeting: Meeting, utterances: Utterance[]): Ut
   });
 }
 
+/* --------------------- live (in-session) speaker names ------------------- */
+
+export interface LiveAssignment {
+  userId?: string;
+  guestLabel?: string;
+}
+
+const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]+/g, "").replace(/\s+/g, " ").trim();
+const MIN_MATCH_CHARS = 12; // ignore trivial fragments when matching turns
+
+/**
+ * Apply names assigned live during capture to the batch transcript.
+ *
+ * Live captions and the batch transcript come from SEPARATE diarization runs,
+ * so "A" live is not necessarily "A" in the batch. Each named live cluster is
+ * matched to the batch cluster whose text best contains that cluster's live
+ * turns; a clear winner gets the name as manual evidence (always wins). With
+ * no recorded turns (captions off), identical labels are trusted as fallback.
+ * Ambiguous clusters stay unknown — post-meeting correction remains available.
+ */
+export function applyLiveAssignments(
+  utterances: Utterance[],
+  assignments: Record<string, LiveAssignment>,
+  liveTurns: Array<{ cluster: string; text: string }>,
+): { utterances: Utterance[]; appliedClusters: string[] } {
+  const batchClusters = [...new Set(utterances.map((u) => u.cluster))];
+  const textByBatchCluster = new Map<string, string>(
+    batchClusters.map((c) => [c, norm(utterances.filter((u) => u.cluster === c).map((u) => u.text).join(" ")) ]),
+  );
+
+  // live cluster -> best-matching batch cluster (with its score)
+  const candidates: Array<{ live: string; batch: string; score: number }> = [];
+  for (const live of Object.keys(assignments)) {
+    const turns = liveTurns.filter((t) => t.cluster === live).map((t) => norm(t.text)).filter((t) => t.length >= MIN_MATCH_CHARS);
+    if (turns.length === 0) {
+      // Captions were off (or nothing said) — trust an identical label.
+      if (batchClusters.includes(live)) candidates.push({ live, batch: live, score: 0.5 });
+      continue;
+    }
+    let best: { batch: string; score: number } | undefined;
+    let runnerUp = 0;
+    for (const [batch, text] of textByBatchCluster) {
+      const score = turns.filter((t) => text.includes(t)).length;
+      if (!best || score > best.score) {
+        runnerUp = best?.score ?? 0;
+        best = { batch, score };
+      } else if (score > runnerUp) {
+        runnerUp = score;
+      }
+    }
+    if (best && best.score >= 1 && best.score > runnerUp) {
+      candidates.push({ live, batch: best.batch, score: best.score });
+    }
+  }
+
+  // One name per batch cluster: on collision the stronger match wins.
+  const byBatch = new Map<string, { live: string; score: number }>();
+  for (const c of candidates) {
+    const cur = byBatch.get(c.batch);
+    if (!cur || c.score > cur.score) byBatch.set(c.batch, { live: c.live, score: c.score });
+  }
+
+  const evidence: AttributionEvidence = { source: "manual", score: 1, detail: "named live during capture" };
+  const applied = utterances.map((u) => {
+    const hit = byBatch.get(u.cluster);
+    if (!hit) return u;
+    const target = assignments[hit.live]!;
+    return {
+      ...u,
+      speakerUserId: target.userId,
+      guestLabel: target.userId ? undefined : target.guestLabel,
+      evidence,
+    };
+  });
+  return { utterances: applied, appliedClusters: [...byBatch.keys()] };
+}
+
 /** Manual correction — always wins; scope "voice" re-labels the whole cluster. */
 export function correct(
   utterances: Utterance[],

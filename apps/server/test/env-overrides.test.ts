@@ -4,10 +4,10 @@ import { applyEnvOverrides, createDb } from "../src/store.js";
 describe("environment policy seeds", () => {
   it("seeds BAA registry entries from COLLECTIVE_BAA", () => {
     const db = createDb();
-    const applied = applyEnvOverrides(db, { COLLECTIVE_BAA: "assemblyai, awsBedrock" });
+    const applied = applyEnvOverrides(db, { COLLECTIVE_BAA: "assemblyai, claudeWorkspace" });
     expect(db.baa.assemblyai).toBe(true);
-    expect(db.baa.awsBedrock).toBe(true);
-    expect(db.baa.claudeWorkspace).toBe(false);
+    expect(db.baa.claudeWorkspace).toBe(true);
+    expect(db.baa.microsoft).toBe(false); // not listed → untouched
     expect(applied).toContain("baa.assemblyai=true");
   });
 

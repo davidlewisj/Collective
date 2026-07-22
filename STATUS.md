@@ -9,7 +9,7 @@ Honest, story-level map of what exists in this repository versus the design spec
 
 ## What runs today, end-to-end (verified live)
 
-`npm install && npm run dev:server && npm run dev:web` gives a working product on mock adapters: sign in (dev auth) → consent-gated capture → live captions (SSE) → stop → diarized, name-attributed transcript → title/summary/action items → private notes → per-layer sharing → search → audit trail → MCP server answering `search_meetings` / `get_transcript` / … over Streamable HTTP. 19 server tests cover the compliance core; the token contrast audit enforces WCAG AA in CI.
+`npm install && npm run dev:server && npm run dev:web` gives a working product on mock adapters: sign in (dev auth) → consent-gated capture → live captions (SSE) with **in-session speaker naming** → stop → diarized, name-attributed transcript → private notes → per-layer sharing → search → audit trail → MCP server answering `search_meetings` / `get_transcript` / `get_notes` / … over Streamable HTTP. **Summaries and action items are connector-territory (D10): users ask their own Claude, which reads the archive through the MCP connector.** 79 server tests cover the compliance core; the token contrast audit enforces WCAG AA in CI.
 
 ## Compliance core
 
@@ -18,7 +18,7 @@ Honest, story-level map of what exists in this repository versus the design spec
 | RBAC policy decision point, deny-by-default, audio as distinct permission | §2.6.1, §2.7.2 | ✅ (`rbac.ts`; deny paths tested incl. admin-no-content, attendee-no-layers) |
 | Hash-chained append-only audit of every content access | §2.6.1, §3.3 | ✅ (`audit.ts`; tamper detection tested) — 🚧 WORM/S3 Object Lock store (AR-1 prod target) |
 | Consent policy engine, WA-strict default, objection path | §2.6.2 | ✅ (start blocked until attestation; objection deletes audio, keeps notes) |
-| Per-meeting PHI flag + BAA-registry egress gating (insight, MCP, **and** real-vendor transcription) + fail-safe + owner reprocess after registry changes | §6.6 | ✅ (all three gates tested; pulled forward from Phase 1.5) |
+| Per-meeting PHI flag + BAA-registry egress gating (MCP **and** real-vendor transcription — the only two egress paths post-D10) + fail-safe + owner reprocess after registry changes | §6.6 | ✅ (both gates tested; pulled forward from Phase 1.5) |
 | Retention clocks + deletion cascade | §2.6.4 | ✅ sweep tested — 🚧 soft-delete window, backup expiry, deletion certificates |
 | Session idle timeout | §2.6.1 | ✅ server-side — 🚧 client lock UX |
 | Microsoft Entra ID sign-in (ID-1): confidential-client code flow, RS256 id_token signature verification against the tenant JWKS (rotation-aware), email link-or-provision (least privilege), role management endpoint, `amr` (MFA) recorded per sign-in | §2.6.1 (#11) | ✅ flow + signature verification tested against a faked token/JWKS endpoint (forged-key, tampered-payload, and `alg:none` tokens rejected) — 🔶 live-tenant validation pending. MFA enforcement = tenant conditional access. SCIM + device registry still 🚧 (#14/#15) |
@@ -30,7 +30,7 @@ Honest, story-level map of what exists in this repository versus the design spec
 
 | Capability | Spec | State |
 |---|---|---|
-| Meeting record (audio/transcript/notes/AI), notes private-by-default | §2.4 | ✅ |
+| Meeting record (audio/transcript/notes), notes private-by-default | §2.4 | ✅ |
 | Diarized transcription — mock adapter | §2.2 | ✅ deterministic dev engine |
 | Diarized transcription — AssemblyAI async (`speaker_labels`, eager delete) | §2.2 | 🔶 real REST adapter written; needs a keyed account + BAA to validate |
 | Voice memos — Sync API | §2.2 | 🔶 same |
@@ -39,8 +39,8 @@ Honest, story-level map of what exists in this repository versus the design spec
 | Claude connector tokens — long-lived, revocable, MCP-surface-only bearer tokens + in-app "Connect Claude Desktop" setup card (Claude Desktop via mcp-remote) | §6.2 (revised: connector-first AI) | ✅ tested (mint/use/scope/revoke) |
 | claude.ai connector — admin-minted OAuth client + browser consent (Admin → "Claude connectors"); users authorize as themselves | §6.2, §6.4 | ✅ built + tested (dev slice) — 🔶 live claude.ai connect needs the public HTTPS deploy |
 | Attribution v1: mic-channel identity, roster name cues, margin rule, corrections, unknown speakers | §2.3.1, §2.3.4 | ✅ tested |
-| Insight — mock heuristic + fallback | §6.1 | ✅ |
-| Insight — Claude on Bedrock (`anthropic.claude-sonnet-5`, assignee validation, minimum-necessary payload) | §6.1, §6.5 | 🔶 adapter written; needs AWS account under BAA |
+| Summaries / action items / archive Q&A — via the user's own Claude through the MCP connector (backend summary job **removed**, D10; local heuristic titles remain) | §6.1 (revised) | ✅ connector surface tested (`get_meeting`/`get_transcript`/`get_notes`); Bedrock insight adapter deleted 2026-07-22 |
+| In-session speaker naming — tap a live caption chip to name the voice mid-meeting; applies to live captions instantly and lands on the final transcript as manual evidence (live↔batch clusters matched by text overlap) | §2.3.4 (D11) | ✅ tested incl. cross-diarization matching, owner-only, guest labels |
 | MCP server (5 tools, per-caller ACL, PHI gating, audit) | §6.2–6.4 | ✅ verified live over Streamable HTTP |
 | MCP OAuth 2.1 front: RFC 9728 + RFC 8414 discovery, authorization-code + PKCE (S256), RFC 8707 audience-bound tokens, refresh, allowlisted admin-minted clients (no open DCR), browser consent page, per-tool scopes | §6.4 | ✅ full flow tested (discovery, authorize→consent→token, refresh/rotation, PKCE/secret/audience/redirect deny paths, client revoke, 401+`WWW-Authenticate`) — 🔶 claude.ai end-to-end needs a public HTTPS deploy (`COLLECTIVE_PUBLIC_URL`) since Claude connects from Anthropic's cloud |
 | Single-origin serving + container for a public **staging** deploy (server serves the built web app; `Dockerfile` + `docs/deploy.md`; Render/Fly/VPS) — the HTTPS endpoint that lets claude.ai + Microsoft OAuth run end-to-end | deploy | ✅ built + tested (SPA + API + OAuth on one origin, auth gate holds) — ⚕ **staging/no-PHI only**; production PHI still requires the BAA-covered AWS landing zone (PF‑1..3) |
@@ -60,4 +60,4 @@ Honest, story-level map of what exists in this repository versus the design spec
 
 ## The gap to production, in one paragraph
 
-The compliance logic, data model, pipeline, MCP surface, UI, and vendor adapters are real and tested here; what stands between this repo and a deployable product is exactly the work that requires things a codebase cannot contain: executed BAAs (issues #6–#9), an AWS landing zone with KMS/Postgres/WORM storage behind the committed SCPs (PF-1..3), Entra ID OIDC + SCIM + device attestation (#11–#15), real-vendor validation of the AssemblyAI/Bedrock adapters, native capture modules exercised on Windows/macOS hardware, and mobile clients. Each is tracked, designed, and has its seam already cut in this codebase.
+The compliance logic, data model, pipeline, MCP surface, UI, and vendor adapters are real and tested here; what stands between this repo and a deployable product is exactly the work that requires things a codebase cannot contain: executed BAAs (issues #6, #8, #9 — the Bedrock BAA #7 became moot with D10), an AWS landing zone with KMS/Postgres/WORM storage behind the committed SCPs (PF-1..3), Entra ID OIDC + SCIM + device attestation (#11–#15), real-vendor validation of the AssemblyAI adapter, native capture modules exercised on Windows/macOS hardware, and mobile clients. Each is tracked, designed, and has its seam already cut in this codebase.

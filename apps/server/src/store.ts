@@ -83,6 +83,12 @@ export interface GraphAuth {
   expiresAtMs: number;
 }
 
+/** In-session speaker naming (live capture); ephemeral like sessions. */
+export interface LiveSpeakerAssignment {
+  userId?: string;
+  guestLabel?: string;
+}
+
 export interface Db {
   users: Map<string, User>;
   meetings: Map<string, Meeting>;
@@ -90,6 +96,10 @@ export interface Db {
   notes: Map<string, Note>; // `${meetingId}:${userId}`
   shares: Map<string, ShareGrant>;
   sessions: Map<string, Session>;
+  /** meetingId -> live cluster -> name assigned during capture (not persisted). */
+  liveSpeakers: Map<string, Record<string, LiveSpeakerAssignment>>;
+  /** meetingId -> finalized live caption turns, for cluster matching at stop. */
+  liveTurns: Map<string, Array<{ cluster: string; text: string }>>;
   userSettings: Map<string, UserSettings>;
   connectorTokens: Map<string, ConnectorToken>;
   oauthClients: Map<string, OAuthClient>; // clientId -> client
@@ -117,13 +127,15 @@ export function createDb(): Db {
     notes: new Map(),
     shares: new Map(),
     sessions: new Map(),
+    liveSpeakers: new Map(),
+    liveTurns: new Map(),
     userSettings: new Map(),
     connectorTokens: new Map(),
     oauthClients: new Map(),
     oauthAccessTokens: new Map(),
     oauthRefreshTokens: new Map(),
     graphAuth: new Map(),
-    baa: { assemblyai: false, awsBedrock: false, claudeWorkspace: false, microsoft: false },
+    baa: { assemblyai: false, claudeWorkspace: false, microsoft: false },
     // WA-strict default (Q6): attestation mandatory before capture starts.
     consentPolicy: {
       requiredMechanisms: ["verbal_announcement_attested"],
@@ -149,6 +161,16 @@ export function seedUsers(db: Db): void {
   ]) {
     db.users.set(u.id, u);
   }
+}
+
+const LIVE_TURNS_CAP = 2000; // plenty for hours of turns; bounds memory
+
+/** Record a finalized live caption turn (for cluster matching at stop). */
+export function recordLiveTurn(db: Db, meetingId: string, cluster: string, text: string): void {
+  const arr = db.liveTurns.get(meetingId) ?? [];
+  if (arr.length >= LIVE_TURNS_CAP) return;
+  arr.push({ cluster, text });
+  db.liveTurns.set(meetingId, arr);
 }
 
 export function userByEmail(db: Db, email: string): User | undefined {
@@ -185,8 +207,8 @@ export function linkOrProvisionUser(
  * Environment-driven policy seeds, so a .env file survives restarts of the
  * in-memory dev store (persistence proper is backlog PF-3):
  * - COLLECTIVE_BAA: comma list of registry entries to mark executed
- *   (assemblyai, awsBedrock, claudeWorkspace, microsoft). Only set these
- *   after the corresponding BAA is actually signed (docs/procurement-baa-runbook.md).
+ *   (assemblyai, claudeWorkspace, microsoft). Only set these after the
+ *   corresponding BAA is actually signed (docs/procurement-baa-runbook.md).
  * - COLLECTIVE_PHI_FAILSAFE=0: treat unanswered PHI flags as non-PHI
  *   (sponsor model); default stays fail-safe.
  */
@@ -198,7 +220,7 @@ export function applyEnvOverrides(db: Db, env: NodeJS.ProcessEnv = process.env):
       .map((s) => s.trim())
       .filter(Boolean),
   );
-  for (const k of ["assemblyai", "awsBedrock", "claudeWorkspace", "microsoft"] as const) {
+  for (const k of ["assemblyai", "claudeWorkspace", "microsoft"] as const) {
     if (keys.has(k)) {
       db.baa[k] = true;
       applied.push(`baa.${k}=true`);
