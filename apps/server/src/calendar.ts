@@ -15,11 +15,32 @@
  * sense of simply produce no match — calendar naming never blocks capture.
  */
 
+export type JoinProvider = "teams" | "zoom" | "meet";
+
 export interface CalendarEvent {
   summary: string;
   startMs: number;
   endMs: number;
   attendeeEmails: string[];
+  /** Online-meeting link found in the event, if any (LOCATION/URL/DESCRIPTION/X-props). */
+  joinUrl?: string;
+  joinProvider?: JoinProvider;
+}
+
+/** Detect a Teams/Zoom/Meet join link from event text fields. */
+export function detectJoin(texts: string[]): { joinUrl: string; joinProvider: JoinProvider } | undefined {
+  const patterns: Array<{ provider: JoinProvider; re: RegExp }> = [
+    { provider: "teams", re: /https?:\/\/teams\.(?:microsoft|live)\.com\/\S+/i },
+    { provider: "zoom", re: /https?:\/\/[\w.-]*zoom\.us\/\S+/i },
+    { provider: "meet", re: /https?:\/\/meet\.google\.com\/\S+/i },
+  ];
+  for (const text of texts) {
+    for (const { provider, re } of patterns) {
+      const m = re.exec(text);
+      if (m) return { joinUrl: m[0].replace(/[\s>"']+$/, ""), joinProvider: provider };
+    }
+  }
+  return undefined;
 }
 
 export type IcsFetcher = (url: string) => Promise<string>;
@@ -63,17 +84,24 @@ function parseDt(value: string): number | null {
 export function parseIcs(ics: string): CalendarEvent[] {
   const events: CalendarEvent[] = [];
   let cur: Partial<CalendarEvent> & { attendeeEmails: string[] } = { attendeeEmails: [] };
+  let joinTexts: string[] = [];
   let inEvent = false;
 
   for (const line of unfold(ics)) {
     if (line === "BEGIN:VEVENT") {
       inEvent = true;
       cur = { attendeeEmails: [] };
+      joinTexts = [];
       continue;
     }
     if (line === "END:VEVENT") {
       inEvent = false;
       if (cur.summary && cur.startMs != null && cur.endMs != null && cur.endMs > cur.startMs) {
+        const join = detectJoin(joinTexts);
+        if (join) {
+          cur.joinUrl = join.joinUrl;
+          cur.joinProvider = join.joinProvider;
+        }
         events.push(cur as CalendarEvent);
       }
       continue;
@@ -93,6 +121,10 @@ export function parseIcs(ics: string): CalendarEvent[] {
       const mail = /mailto:([^\s>]+)/i.exec(value)?.[1];
       if (mail) cur.attendeeEmails.push(mail.toLowerCase());
     }
+    // Online-meeting links live in LOCATION/URL/DESCRIPTION or X-* conf props.
+    if (name === "LOCATION" || name === "URL" || name === "DESCRIPTION" || name.startsWith("X-")) {
+      joinTexts.push(value.replace(/\\([,;n])/gi, (_, c: string) => (c.toLowerCase() === "n" ? " " : c)));
+    }
   }
   return events;
 }
@@ -109,19 +141,45 @@ export function eventCovering(events: CalendarEvent[], nowMs: number): CalendarE
 const cache = new Map<string, { at: number; events: CalendarEvent[] }>();
 const CACHE_MS = 5 * 60 * 1000;
 
+async function eventsFor(url: string, fetcher: IcsFetcher, nowMs: number): Promise<CalendarEvent[]> {
+  let entry = cache.get(url);
+  if (!entry || nowMs - entry.at > CACHE_MS) {
+    entry = { at: nowMs, events: parseIcs(await fetcher(url)) };
+    cache.set(url, entry);
+  }
+  return entry.events;
+}
+
 export async function currentCalendarEvent(
   url: string,
   fetcher: IcsFetcher,
   nowMs = Date.now(),
 ): Promise<CalendarEvent | undefined> {
   try {
-    let entry = cache.get(url);
-    if (!entry || nowMs - entry.at > CACHE_MS) {
-      entry = { at: nowMs, events: parseIcs(await fetcher(url)) };
-      cache.set(url, entry);
-    }
-    return eventCovering(entry.events, nowMs);
+    return eventCovering(await eventsFor(url, fetcher, nowMs), nowMs);
   } catch {
     return undefined; // calendar problems never block capture
+  }
+}
+
+/**
+ * Upcoming events for the "Coming up" list: everything not yet ended (with the
+ * same short grace window so a just-started meeting still shows), soonest
+ * first. Past meetings naturally drop off as `nowMs` advances.
+ */
+export async function upcomingCalendarEvents(
+  url: string,
+  fetcher: IcsFetcher,
+  nowMs = Date.now(),
+  limit = 8,
+): Promise<CalendarEvent[]> {
+  try {
+    const events = await eventsFor(url, fetcher, nowMs);
+    return events
+      .filter((e) => e.endMs > nowMs)
+      .sort((a, b) => a.startMs - b.startMs)
+      .slice(0, limit);
+  } catch {
+    return [];
   }
 }

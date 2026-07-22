@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eventCovering, parseIcs } from "../src/calendar.js";
+import { eventCovering, parseIcs, upcomingCalendarEvents } from "../src/calendar.js";
 import { AuditLog } from "../src/audit.js";
 import { buildApp } from "../src/http.js";
 import { MockTranscriber } from "../src/adapters/transcriber.js";
@@ -59,6 +59,42 @@ describe("ICS parsing & matching", () => {
     // 10-minute pre-start grace window.
     expect(eventCovering(events, Date.parse("2026-07-20T15:55:00Z"))?.summary).toBe("Long block");
     expect(eventCovering(events, Date.parse("2026-07-20T19:00:00Z"))).toBeUndefined();
+  });
+
+  it("detects Teams/Zoom/Meet join links from LOCATION and DESCRIPTION", () => {
+    const teams = parseIcs(
+      "BEGIN:VEVENT\nDTSTART:20260720T170000Z\nDTEND:20260720T173000Z\nSUMMARY:T\nLOCATION:Microsoft Teams Meeting\nDESCRIPTION:Join https://teams.microsoft.com/l/meetup-join/abc here\nEND:VEVENT",
+    );
+    expect(teams[0]!.joinProvider).toBe("teams");
+    expect(teams[0]!.joinUrl).toContain("teams.microsoft.com");
+
+    const zoom = parseIcs(
+      "BEGIN:VEVENT\nDTSTART:20260720T170000Z\nDTEND:20260720T173000Z\nSUMMARY:Z\nLOCATION:https://us02web.zoom.us/j/123456\nEND:VEVENT",
+    );
+    expect(zoom[0]!.joinProvider).toBe("zoom");
+
+    const meet = parseIcs(
+      "BEGIN:VEVENT\nDTSTART:20260720T170000Z\nDTEND:20260720T173000Z\nSUMMARY:M\nX-GOOGLE-CONFERENCE:https://meet.google.com/xyz-abcd-efg\nEND:VEVENT",
+    );
+    expect(meet[0]!.joinProvider).toBe("meet");
+
+    const none = parseIcs(
+      "BEGIN:VEVENT\nDTSTART:20260720T170000Z\nDTEND:20260720T173000Z\nSUMMARY:In person\nLOCATION:Room 3\nEND:VEVENT",
+    );
+    expect(none[0]!.joinProvider).toBeUndefined();
+  });
+});
+
+describe("upcoming events", () => {
+  it("returns not-yet-ended events soonest-first and drops past ones", async () => {
+    const now = Date.parse("2026-07-22T12:00:00Z");
+    const ics = [
+      "BEGIN:VEVENT\nDTSTART:20260722T090000Z\nDTEND:20260722T100000Z\nSUMMARY:Earlier (over)\nEND:VEVENT",
+      "BEGIN:VEVENT\nDTSTART:20260722T150000Z\nDTEND:20260722T160000Z\nSUMMARY:Afternoon\nEND:VEVENT",
+      "BEGIN:VEVENT\nDTSTART:20260722T113000Z\nDTEND:20260722T123000Z\nSUMMARY:Now\nEND:VEVENT",
+    ].join("\n");
+    const events = await upcomingCalendarEvents("https://cal/u.ics", async () => ics, now);
+    expect(events.map((e) => e.summary)).toEqual(["Now", "Afternoon"]);
   });
 });
 

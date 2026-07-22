@@ -8,6 +8,7 @@ import { dateGroupLabel, fmtTimeOfDay, meetingDuration } from "../lib/format";
 import { Avatar } from "../components/Avatar";
 import { StateBadge } from "../components/Badges";
 import { RecordButton } from "../components/RecordButton";
+import { ComingUp } from "../components/ComingUp";
 import { IconSearch, IconSignOut, IconSliders } from "../components/icons";
 
 /** Some servers annotate meetings with their grants; render "Shared" if so. */
@@ -163,6 +164,8 @@ export function MeetingListPage() {
           onChange={(e) => setQ(e.target.value)}
         />
       </div>
+
+      {hits === null && <ComingUp />}
 
       {hits !== null ? (
         <SearchResults hits={hits} />
