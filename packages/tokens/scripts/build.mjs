@@ -19,6 +19,10 @@ function colorVars(mode) {
   ];
   for (const [k, v] of Object.entries(c.state)) lines.push(`--c-state-${k}: ${v};`);
   c.speaker.forEach((v, i) => lines.push(`--c-speaker-${i + 1}: ${v};`));
+  // Brand accents (e.g. the Claude connector CTA) — not part of the app palette.
+  if (c.brand)
+    for (const [k, v] of Object.entries(c.brand))
+      lines.push(`--c-brand-${k.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase())}: ${v};`);
   return lines.join("\n  ");
 }
 
