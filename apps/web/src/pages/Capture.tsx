@@ -661,7 +661,13 @@ export function CapturePage() {
             onNameSpeaker={(cluster, target) => void handleNameSpeaker(cluster, target)}
           />
           <aside className={`notes-pane${notesOpen ? " notes-pane-open" : ""}`}>
-            <NotesEditor body={note.body} onChange={note.setBody} saveState={note.saveState} rows={14} />
+            <NotesEditor
+              body={note.body}
+              onChange={note.setBody}
+              saveState={note.saveState}
+              rows={14}
+              onInsertMark={addMarker}
+            />
           </aside>
         </div>
       )}
