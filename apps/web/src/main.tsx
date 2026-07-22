@@ -5,6 +5,9 @@ import "./styles/base.css";
 import "./styles/components.css";
 import "./styles/screens.css";
 import { App } from "./App";
+import { initTheme } from "./lib/theme";
+
+initTheme();
 
 const rootEl = document.getElementById("root");
 if (!rootEl) throw new Error("Missing #root");

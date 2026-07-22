@@ -8,7 +8,7 @@ import { dateGroupLabel, fmtTimeOfDay, meetingDuration } from "../lib/format";
 import { Avatar } from "../components/Avatar";
 import { StateBadge } from "../components/Badges";
 import { RecordButton } from "../components/RecordButton";
-import { IconSearch, IconShield, IconSignOut, IconSliders } from "../components/icons";
+import { IconSearch, IconSignOut, IconSliders } from "../components/icons";
 
 /** Some servers annotate meetings with their grants; render "Shared" if so. */
 type MeetingMaybeShared = Meeting & { shares?: ShareGrant[]; shared?: boolean };
@@ -133,19 +133,11 @@ export function MeetingListPage() {
     return out;
   }, [meetings]);
 
-  const showAdmin = user?.role === "org_admin" || user?.role === "compliance_auditor";
-
   return (
     <main className="list-page">
       <header className="list-topbar">
         <span className="wordmark">Collective</span>
         <nav className="list-nav" aria-label="Account">
-          {showAdmin && (
-            <Link to="/admin" className="nav-link">
-              <IconShield size={20} />
-              <span>Admin</span>
-            </Link>
-          )}
           <Link to="/settings" className="nav-link">
             <IconSliders size={20} />
             <span>Settings</span>
