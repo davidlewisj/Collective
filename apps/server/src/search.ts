@@ -12,6 +12,8 @@ export interface SearchHit {
   title: string;
   layer: ShareLayer | "title";
   snippet: string;
+  /** Meeting time (start, else created) so results can show the date. */
+  whenIso: string;
 }
 
 function snippetAround(text: string, q: string): string {
@@ -28,14 +30,15 @@ export function search(db: Db, user: User, q: string): SearchHit[] {
 
   for (const m of db.meetings.values()) {
     if (m.status === "deleted" || !canSeeRecord(db, user, m)) continue;
+    const whenIso = m.startedAt ?? m.createdAt;
 
     if (m.title.toLowerCase().includes(needle)) {
-      hits.push({ meetingId: m.id, title: m.title, layer: "title", snippet: m.title });
+      hits.push({ meetingId: m.id, title: m.title, layer: "title", snippet: m.title, whenIso });
     }
     if (can(db, user, "read", m, "transcript")) {
       for (const u of db.utterances.get(m.id) ?? []) {
         if (u.text.toLowerCase().includes(needle)) {
-          hits.push({ meetingId: m.id, title: m.title, layer: "transcript", snippet: snippetAround(u.text, q) });
+          hits.push({ meetingId: m.id, title: m.title, layer: "transcript", snippet: snippetAround(u.text, q), whenIso });
           break;
         }
       }
@@ -43,7 +46,7 @@ export function search(db: Db, user: User, q: string): SearchHit[] {
     // Notes are searchable ONLY by their author, regardless of shares.
     const own = db.notes.get(`${m.id}:${user.id}`);
     if (own && own.body.toLowerCase().includes(needle)) {
-      hits.push({ meetingId: m.id, title: m.title, layer: "notes", snippet: snippetAround(own.body, q) });
+      hits.push({ meetingId: m.id, title: m.title, layer: "notes", snippet: snippetAround(own.body, q), whenIso });
     }
   }
   return hits.slice(0, 50);

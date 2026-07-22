@@ -351,9 +351,26 @@
   gap: var(--space-5);
 }
 
+.search-group-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  text-decoration: none;
+}
+
+.search-group-head:hover .search-group-title {
+  color: var(--c-juniper);
+}
+
 .search-group-title {
   font: var(--type-title);
   color: var(--c-ink);
+}
+
+.search-group-when {
+  font: var(--type-mono-sm);
+  color: var(--c-sage);
 }
 
 .search-hit {
