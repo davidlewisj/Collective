@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import type {
   AuditEvent,
@@ -48,6 +48,79 @@ function SaveNote({ state }: { state: SaveState }) {
       {state === "saved" && <IconCheck size={14} />}
       {state === "saving" ? "Saving…" : state === "saved" ? "Saved" : state === "error" ? "Couldn't save" : ""}
     </span>
+  );
+}
+
+/* --------------------------- floating save bar --------------------------- */
+
+/**
+ * A page-level save bar: editable cards register a `dirty` flag and a `save`
+ * fn; when anything is unsaved a bar floats bottom-right and saves them all at
+ * once. Destructive edits (retention) keep their own confirm-gated button and
+ * stay out of the bar. Bubble color + theme apply instantly, also out of band.
+ */
+interface Saver {
+  dirty: boolean;
+  save: () => Promise<void>;
+}
+const SaveBarCtx = createContext<{ report: (id: string, s: Saver | null) => void } | null>(null);
+
+/** Register a card's dirty state + save fn with the bar (only while dirty). */
+function useRegisterSaver(id: string, dirty: boolean, save: () => Promise<void>) {
+  const bar = useContext(SaveBarCtx);
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  useEffect(() => {
+    bar?.report(id, dirty ? { dirty, save: () => saveRef.current() } : null);
+    return () => bar?.report(id, null);
+  }, [id, dirty, bar]);
+}
+
+function SettingsSaveBar({ children }: { children: ReactNode }) {
+  const [savers, setSavers] = useState<Record<string, Saver>>({});
+  const [saving, setSaving] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const report = useCallback((id: string, s: Saver | null) => {
+    setSavers((prev) => {
+      if (!s || !s.dirty) {
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      }
+      return { ...prev, [id]: s };
+    });
+  }, []);
+  // Stable context value: a fresh object here would change the `bar` dep in
+  // every useRegisterSaver effect on each provider render → update loop.
+  const ctx = useMemo(() => ({ report }), [report]);
+
+  const dirty = Object.values(savers);
+  const saveAll = async () => {
+    setSaving(true);
+    setFailed(false);
+    const results = await Promise.allSettled(dirty.map((s) => s.save()));
+    setSaving(false);
+    if (results.some((r) => r.status === "rejected")) setFailed(true);
+  };
+
+  return (
+    <SaveBarCtx.Provider value={ctx}>
+      {children}
+      {dirty.length > 0 && (
+        <div className="save-bar" role="region" aria-label="Unsaved changes">
+          <span className="save-bar-text">
+            {failed
+              ? "Some changes couldn't be saved — try again"
+              : `${dirty.length} unsaved change${dirty.length > 1 ? "s" : ""}`}
+          </span>
+          <button type="button" className="btn save-bar-btn" disabled={saving} onClick={() => void saveAll()}>
+            {saving ? "Saving…" : "Save changes"}
+          </button>
+        </div>
+      )}
+    </SaveBarCtx.Provider>
   );
 }
 
@@ -184,25 +257,28 @@ function AppearanceCard() {
 
 function CalendarCard() {
   const [url, setUrl] = useState("");
-  const [saved, setSaved] = useState<SaveState>("idle");
+  const [savedUrl, setSavedUrl] = useState("");
+  const [loaded, setLoaded] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
 
   useEffect(() => {
     getSettings()
-      .then((s) => setUrl(s.calendarIcsUrl ?? ""))
-      .catch(() => setSaved("error"));
+      .then((s) => {
+        setUrl(s.calendarIcsUrl ?? "");
+        setSavedUrl(s.calendarIcsUrl ?? "");
+        setLoaded(true);
+      })
+      .catch(() => setLoaded(true));
   }, []);
 
+  const dirty = loaded && url.trim() !== savedUrl;
   const save = async () => {
-    setSaved("saving");
-    try {
-      await putSettings({ calendarIcsUrl: url.trim() });
-      setSaved("saved");
-    } catch {
-      setSaved("error");
-    }
+    const next = url.trim();
+    await putSettings({ calendarIcsUrl: next });
+    setSavedUrl(next);
   };
+  useRegisterSaver("calendar", dirty, save);
 
   const test = async () => {
     setPreview("Checking…");
@@ -244,25 +320,20 @@ function CalendarCard() {
         <input
           type="url"
           value={url}
-          onChange={(e) => {
-            setUrl(e.target.value);
-            setSaved("idle");
-          }}
+          onChange={(e) => setUrl(e.target.value)}
           placeholder="https://outlook.office365.com/owa/calendar/…/calendar.ics"
           aria-label="Calendar ICS address"
           autoComplete="off"
         />
-        <button type="button" className="btn" onClick={() => void save()}>
-          Save
-        </button>
         <button type="button" className="btn-quiet" onClick={() => void test()} disabled={!url.trim()}>
           Test
         </button>
       </div>
-      <p className="detail-muted set-inline-note" aria-live="polite">
-        {saved === "saving" ? "Saving…" : saved === "saved" ? "Saved." : saved === "error" ? "Couldn't save." : ""}
-        {preview ? ` ${preview}` : ""}
-      </p>
+      {preview && (
+        <p className="detail-muted set-inline-note" aria-live="polite">
+          {preview}
+        </p>
+      )}
     </section>
   );
 }
@@ -411,22 +482,23 @@ function ComplianceGlance() {
 
 function BaaCard() {
   const [reg, setReg] = useState<BaaRegistry | null>(null);
-  const [save, setSave] = useState<SaveState>("idle");
+  const [savedReg, setSavedReg] = useState<BaaRegistry | null>(null);
 
   useEffect(() => {
-    getBaaRegistry().then(setReg).catch(() => setSave("error"));
+    getBaaRegistry()
+      .then((r) => {
+        setReg(r);
+        setSavedReg(r);
+      })
+      .catch(() => {});
   }, []);
 
-  const submit = async () => {
+  const dirty = !!reg && !!savedReg && JSON.stringify(reg) !== JSON.stringify(savedReg);
+  const save = async () => {
     if (!reg) return;
-    setSave("saving");
-    try {
-      setReg(await putBaaRegistry(reg));
-      setSave("saved");
-    } catch {
-      setSave("error");
-    }
+    setSavedReg(await putBaaRegistry(reg));
   };
+  useRegisterSaver("baa", dirty, save);
 
   return (
     <section id="baa" className="set-card workspace-card">
@@ -436,21 +508,13 @@ function BaaCard() {
         patient-info meetings.
       </p>
       {reg ? (
-        <>
-          {BAA_LABELS.map(({ key, label, hint }) => (
-            <label key={key} className="toggle-row">
-              <input type="checkbox" checked={reg[key]} onChange={(e) => setReg({ ...reg, [key]: e.target.checked })} />
-              <span>{label}</span>
-              <span className="admin-row-hint">{hint}</span>
-            </label>
-          ))}
-          <div className="admin-card-foot">
-            <button type="button" className="btn" onClick={() => void submit()}>
-              Save BAA registry
-            </button>
-            <SaveNote state={save} />
-          </div>
-        </>
+        BAA_LABELS.map(({ key, label, hint }) => (
+          <label key={key} className="toggle-row">
+            <input type="checkbox" checked={reg[key]} onChange={(e) => setReg({ ...reg, [key]: e.target.checked })} />
+            <span>{label}</span>
+            <span className="admin-row-hint">{hint}</span>
+          </label>
+        ))
       ) : (
         <p className="detail-muted">Loading…</p>
       )}
@@ -460,10 +524,15 @@ function BaaCard() {
 
 function ConsentCard() {
   const [policy, setPolicy] = useState<ConsentPolicy | null>(null);
-  const [save, setSave] = useState<SaveState>("idle");
+  const [savedPolicy, setSavedPolicy] = useState<ConsentPolicy | null>(null);
 
   useEffect(() => {
-    getConsentPolicy().then(setPolicy).catch(() => setSave("error"));
+    getConsentPolicy()
+      .then((p) => {
+        setPolicy(p);
+        setSavedPolicy(p);
+      })
+      .catch(() => {});
   }, []);
 
   const toggleMechanism = (m: ConsentMechanism, on: boolean) => {
@@ -474,16 +543,14 @@ function ConsentCard() {
     setPolicy({ ...policy, requiredMechanisms: [...set] });
   };
 
-  const submit = async () => {
+  // Order-independent comparison for the mechanism list.
+  const norm = (p: ConsentPolicy) => JSON.stringify({ m: [...p.requiredMechanisms].sort(), f: p.phiFailSafe });
+  const dirty = !!policy && !!savedPolicy && norm(policy) !== norm(savedPolicy);
+  const save = async () => {
     if (!policy) return;
-    setSave("saving");
-    try {
-      setPolicy(await putConsentPolicy(policy));
-      setSave("saved");
-    } catch {
-      setSave("error");
-    }
+    setSavedPolicy(await putConsentPolicy(policy));
   };
+  useRegisterSaver("consent", dirty, save);
 
   return (
     <section id="consent" className="set-card workspace-card">
@@ -510,12 +577,6 @@ function ConsentCard() {
             <span>PHI fail-safe</span>
             <span className="admin-row-hint">Treat an unanswered patient-info flag as “yes”</span>
           </label>
-          <div className="admin-card-foot">
-            <button type="button" className="btn" onClick={() => void submit()}>
-              Save consent policy
-            </button>
-            <SaveNote state={save} />
-          </div>
         </>
       ) : (
         <p className="detail-muted">Loading…</p>
@@ -849,52 +910,54 @@ export function SettingsPage() {
   }, [location.hash]);
 
   return (
-    <main className="settings-page">
-      <header className="detail-topbar">
-        <Link to="/" className="btn-quiet nav-link">
-          <IconChevronLeft size={20} />
-          <span>Meetings</span>
-        </Link>
-        <h1 className="settings-headline">Settings</h1>
-      </header>
+    <SettingsSaveBar>
+      <main className="settings-page">
+        <header className="detail-topbar">
+          <Link to="/" className="btn-quiet nav-link">
+            <IconChevronLeft size={20} />
+            <span>Meetings</span>
+          </Link>
+          <h1 className="settings-headline">Settings</h1>
+        </header>
 
-      <div className="settings-layout">
-        <MiniNav anchors={anchors} active={active} />
+        <div className="settings-layout">
+          <MiniNav anchors={anchors} active={active} />
 
-        <div className="settings-col" ref={colRef}>
-          <ProfileCard />
-          <AppearanceCard />
-          <CalendarCard />
-          <ConnectClaudeCard />
+          <div className="settings-col" ref={colRef}>
+            <ProfileCard />
+            <AppearanceCard />
+            <CalendarCard />
+            <ConnectClaudeCard />
 
-          {showWorkspace && (
-            <div className="workspace-well">
-              <div id="workspace" className="workspace-banner">
-                <span className="workspace-banner-mark" aria-hidden="true">
-                  <IconShield size={22} />
-                </span>
-                <div>
-                  <h2 className="workspace-banner-title">Workspace</h2>
-                  <p className="set-hint">
-                    Organization-wide compliance controls.{" "}
-                    {isAdmin ? "Changes here apply to everyone." : "You have read access to the audit log."}
-                  </p>
+            {showWorkspace && (
+              <div className="workspace-well">
+                <div id="workspace" className="workspace-banner">
+                  <span className="workspace-banner-mark" aria-hidden="true">
+                    <IconShield size={22} />
+                  </span>
+                  <div>
+                    <h2 className="workspace-banner-title">Workspace</h2>
+                    <p className="set-hint">
+                      Organization-wide compliance controls.{" "}
+                      {isAdmin ? "Changes here apply to everyone." : "You have read access to the audit log."}
+                    </p>
+                  </div>
                 </div>
+                {isAdmin && <ComplianceGlance />}
+                {isAdmin && (
+                  <>
+                    <BaaCard />
+                    <ConsentCard />
+                    <RetentionCard />
+                    <ConnectorsCard />
+                  </>
+                )}
+                <AuditTable />
               </div>
-              {isAdmin && <ComplianceGlance />}
-              {isAdmin && (
-                <>
-                  <BaaCard />
-                  <ConsentCard />
-                  <RetentionCard />
-                  <ConnectorsCard />
-                </>
-              )}
-              <AuditTable />
-            </div>
-          )}
+            )}
+          </div>
         </div>
-      </div>
-    </main>
+      </main>
+    </SettingsSaveBar>
   );
 }
