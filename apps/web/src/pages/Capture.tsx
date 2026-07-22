@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import type { ConsentMechanism, Meeting, MeetingMode, User } from "@collective/shared";
 import {
   ApiError,
@@ -320,10 +320,12 @@ function LiveTranscript({
 
 export function CapturePage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const [phase, setPhase] = useState<Phase>("setup");
   const [mode, setMode] = useState<MeetingMode>("virtual_desktop");
-  const [title, setTitle] = useState("");
+  // Prefill the title when launched from a calendar event ("Coming up").
+  const [title, setTitle] = useState(() => (location.state as { title?: string } | null)?.title ?? "");
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

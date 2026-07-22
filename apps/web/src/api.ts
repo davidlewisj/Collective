@@ -321,6 +321,21 @@ export function getCalendarPreview(): Promise<{ title: string; attendeeEmails: s
   );
 }
 
+export type JoinProvider = "teams" | "zoom" | "meet";
+
+export interface UpcomingEvent {
+  title: string;
+  startMs: number;
+  endMs: number;
+  attendeeEmails: string[];
+  joinUrl: string | null;
+  joinProvider: JoinProvider | null;
+}
+
+export function getUpcomingEvents(): Promise<UpcomingEvent[]> {
+  return api<{ events: UpcomingEvent[] }>("/me/calendar-upcoming").then((r) => r.events);
+}
+
 export function getConnectorTokenStatus(): Promise<{ exists: boolean; createdAt: string | null }> {
   return api<{ exists: boolean; createdAt: string | null }>("/me/connector-token");
 }

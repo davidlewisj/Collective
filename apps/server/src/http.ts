@@ -40,7 +40,7 @@ import { webOrigin as resolveWebOrigin } from "./config.js";
 import { Transcriber } from "./adapters/transcriber.js";
 import { MockVoiceEngine, VoiceEngine } from "./adapters/voice.js";
 import { AudioStore, MemoryAudioStore } from "./persist.js";
-import { IcsFetcher, currentCalendarEvent, httpIcsFetcher } from "./calendar.js";
+import { IcsFetcher, currentCalendarEvent, httpIcsFetcher, upcomingCalendarEvents } from "./calendar.js";
 import { StreamingRelay, UpstreamFactory } from "./relay.js";
 import { registerMcp } from "./mcp.js";
 
@@ -417,6 +417,24 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const hit = await eventForUserNow(req.user.id);
     return {
       event: hit ? { title: hit.event.summary, attendeeEmails: hit.event.attendeeEmails, source: hit.source } : null,
+    };
+  });
+
+  app.get("/me/calendar-upcoming", async (req) => {
+    // "Coming up" list: upcoming events from the ICS feed (soonest first;
+    // past meetings drop off). Join links are surfaced so the client can offer
+    // "Join now". No feed configured (or a fetch error) → empty, never an error.
+    const icsUrl = db.userSettings.get(req.user.id)?.calendarIcsUrl;
+    const events = icsUrl ? await upcomingCalendarEvents(icsUrl, deps.icsFetcher ?? httpIcsFetcher) : [];
+    return {
+      events: events.map((e) => ({
+        title: e.summary,
+        startMs: e.startMs,
+        endMs: e.endMs,
+        attendeeEmails: e.attendeeEmails,
+        joinUrl: e.joinUrl ?? null,
+        joinProvider: e.joinProvider ?? null,
+      })),
     };
   });
 
