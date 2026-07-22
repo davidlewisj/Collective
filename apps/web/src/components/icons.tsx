@@ -232,3 +232,23 @@ export const IconSparkle = (p: IconProps) => (
     <path d="M18 15c.3 1.7.8 2.2 2.5 2.5-1.7.3-2.2.8-2.5 2.5-.3-1.7-.8-2.2-2.5-2.5 1.7-.3 2.2-.8 2.5-2.5z" />
   </Icon>
 );
+
+/**
+ * A radiant burst — the mark on the "Summarize" / Claude-connector button. A
+ * simple generic sunburst (twelve tapering rays), drawn with currentColor so
+ * it reads white on the brand-colored button.
+ */
+export const IconClaude = (p: IconProps) => (
+  <Icon {...p} strokeWidth={2}>
+    {Array.from({ length: 12 }, (_, i) => {
+      const a = (i * Math.PI) / 6;
+      const r1 = i % 2 === 0 ? 3.4 : 4.2;
+      const r2 = i % 2 === 0 ? 9.2 : 7.6;
+      const x1 = 12 + Math.cos(a) * r1;
+      const y1 = 12 + Math.sin(a) * r1;
+      const x2 = 12 + Math.cos(a) * r2;
+      const y2 = 12 + Math.sin(a) * r2;
+      return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} />;
+    })}
+  </Icon>
+);

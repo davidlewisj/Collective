@@ -332,7 +332,11 @@ export function CapturePage() {
   const [speakers, setSpeakers] = useState<Record<string, { name: string; userId: string | null }>>({});
   const [elapsed, setElapsed] = useState(0);
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
-  const [notesOpen, setNotesOpen] = useState(false);
+  // Notes panel: open by default on desktop (a side rail), closed on mobile
+  // (a bottom sheet). The dock toggle collapses/expands it either way.
+  const [notesOpen, setNotesOpen] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(min-width: 56.25em)").matches,
+  );
   const [objectionArmed, setObjectionArmed] = useState(false);
   const [flags, setFlags] = useState<LiveFlag[]>([]);
 
@@ -699,7 +703,7 @@ export function CapturePage() {
       {isLive && <Waveform analyser={analyser} paused={phase === "paused"} />}
 
       {(isLive || phase === "stopping") && (
-        <div className="capture-body">
+        <div className={`capture-body${notesOpen ? "" : " notes-hidden"}`}>
           <LiveTranscript
             lines={lines}
             liveCaptions={liveCaptions}

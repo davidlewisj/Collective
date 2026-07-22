@@ -21,12 +21,11 @@ import { ShareSheet } from "../components/ShareSheet";
 import { useNote } from "../lib/useNote";
 import {
   IconChevronLeft,
-  IconCopy,
+  IconClaude,
   IconLock,
   IconPause,
   IconPlay,
   IconShare,
-  IconSparkle,
 } from "../components/icons";
 
 type MeetingMaybeShared = Meeting & { shares?: ShareGrant[] };
@@ -88,38 +87,31 @@ function PhiChip({
 
 /**
  * Summaries and action items are connector-territory (D10): the user asks
- * their own Claude, which reads this meeting through the MCP connector. This
- * card hands them a ready-made prompt.
+ * their own Claude, which reads this meeting through the MCP connector. The
+ * "Summarize" button copies a ready-made prompt to paste into Claude.
  */
-function AskClaudeCard({ meeting }: { meeting: Meeting }) {
+function SummarizeButton({ meeting }: { meeting: Meeting }) {
   const [copied, setCopied] = useState(false);
   const when = new Date(meeting.startedAt ?? meeting.createdAt).toLocaleDateString("en-US");
   const prompt = `Using the Collective connector, summarize the meeting "${meeting.title || "Untitled meeting"}" (${when}): key points, decisions, and action items with owners. Use the transcript and my notes.`;
 
   return (
-    <section className="detail-section">
-      <h2 className="section-heading section-heading-icon">
-        <IconSparkle size={20} />
-        Summary &amp; action items
-      </h2>
-      <p className="detail-muted">
-        Ask Claude — it reads this meeting's transcript and your notes through your Collective connector
-        and answers with exactly what you need. Set it up once in Settings → Connect Claude.
-      </p>
-      <div className="ask-claude-row">
-        <p className="ask-claude-prompt mono">{prompt}</p>
-        <button
-          type="button"
-          className="btn-quiet icon-text-btn"
-          onClick={() => {
-            void navigator.clipboard.writeText(prompt).then(() => setCopied(true));
-          }}
-        >
-          <IconCopy size={18} />
-          {copied ? "Copied" : "Copy prompt"}
-        </button>
-      </div>
-    </section>
+    <div className="summarize-row">
+      <button
+        type="button"
+        className="summarize-btn"
+        title="Copies a prompt to paste into your Claude, which reads this meeting through the connector"
+        onClick={() => {
+          void navigator.clipboard.writeText(prompt).then(() => setCopied(true));
+        }}
+      >
+        <IconClaude size={20} />
+        <span>{copied ? "Copied — paste into Claude" : "Summarize"}</span>
+      </button>
+      <span className="summarize-hint detail-muted">
+        {copied ? "Ask your connected Claude for the summary and action items." : "Summary & action items via your Claude connector."}
+      </span>
+    </div>
   );
 }
 
@@ -681,7 +673,7 @@ export function MeetingDetailPage() {
               {meeting.notice}
             </p>
           )}
-          <AskClaudeCard meeting={meeting} />
+          <SummarizeButton meeting={meeting} />
         </>
       )}
 
