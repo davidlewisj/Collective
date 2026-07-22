@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { publicOrigin, webOrigin } from "../src/config.js";
+import { devLoginAllowed, publicOrigin, webOrigin } from "../src/config.js";
 import { oauthConfigFromEnv } from "../src/oauth.js";
 import { graphConfigFromEnv } from "../src/msgraph.js";
 
@@ -36,5 +36,24 @@ describe("public-origin resolution", () => {
       GRAPH_CLIENT_SECRET: "s",
     });
     expect(graph?.redirectUri).toBe("https://c.onrender.com/auth/callback");
+  });
+});
+
+describe("dev-login gate", () => {
+  it("is ON in local dev (nothing configured)", () => {
+    expect(devLoginAllowed({})).toBe(true);
+  });
+
+  it("is OFF on a public deploy (public origin or NODE_ENV=production)", () => {
+    expect(devLoginAllowed({ RENDER_EXTERNAL_URL: "https://c.onrender.com" })).toBe(false);
+    expect(devLoginAllowed({ COLLECTIVE_PUBLIC_URL: "https://c.example.com" })).toBe(false);
+    expect(devLoginAllowed({ NODE_ENV: "production" })).toBe(false);
+  });
+
+  it("honors the explicit override either way", () => {
+    // Force ON for a test-data staging box that hasn't wired real sign-in yet.
+    expect(devLoginAllowed({ RENDER_EXTERNAL_URL: "https://c.onrender.com", COLLECTIVE_ALLOW_DEV_LOGIN: "1" })).toBe(true);
+    // Force OFF even in local dev.
+    expect(devLoginAllowed({ COLLECTIVE_ALLOW_DEV_LOGIN: "0" })).toBe(false);
   });
 });

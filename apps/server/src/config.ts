@@ -26,3 +26,20 @@ export function webOrigin(env: NodeJS.ProcessEnv = process.env): string {
     env.WEB_ORIGIN ?? env.COLLECTIVE_PUBLIC_URL ?? env.RENDER_EXTERNAL_URL ?? "http://localhost:5173",
   );
 }
+
+/**
+ * Dev-login (`POST /auth/dev-login`) is a passwordless "sign in as any known
+ * user" shortcut for local dev and tests. It must never be reachable on a
+ * public deployment. Default: ON in local dev, OFF whenever the deploy looks
+ * public (a public origin is configured, or NODE_ENV=production). An explicit
+ * `COLLECTIVE_ALLOW_DEV_LOGIN` forces it either way — set `=1` to keep it on a
+ * test-data-only staging box that hasn't wired up real sign-in yet.
+ */
+export function devLoginAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
+  const explicit = env.COLLECTIVE_ALLOW_DEV_LOGIN?.trim().toLowerCase();
+  if (explicit === "1" || explicit === "true") return true;
+  if (explicit === "0" || explicit === "false") return false;
+  const looksPublic =
+    !!(env.COLLECTIVE_PUBLIC_URL || env.RENDER_EXTERNAL_URL) || env.NODE_ENV === "production";
+  return !looksPublic;
+}

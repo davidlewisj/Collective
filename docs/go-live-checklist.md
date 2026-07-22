@@ -63,11 +63,13 @@ own; do them top to bottom. Cross-references: `docs/deploy.md` (topology), `docs
 
 ## 5. Security hardening — before real users sign in
 
-- [ ] **Lock down dev-login. ⚠ Needs a small code change, not just config.** `POST /auth/dev-login`
-      currently mints a session for any known email with no password — fine for local/dev, unacceptable
-      on a public URL. It must be disabled in production (e.g. off whenever Microsoft sign-in is
-      configured, or behind an explicit allow flag). **This is not yet gated in the code** — track it as
-      a required pre-launch task. *(I can implement this gate as a one-PR change on request.)*
+- [x] **Dev-login is locked down (implemented).** `POST /auth/dev-login` (passwordless "sign in as any
+      known user") is now **disabled by default on any public deploy** — detected via `COLLECTIVE_PUBLIC_URL`
+      / `RENDER_EXTERNAL_URL` / `NODE_ENV=production` — returning 403, and the web login form hides the
+      dev sign-in accordingly. Override with **`COLLECTIVE_ALLOW_DEV_LOGIN`** (`=1` force-on, `=0`
+      force-off). **⚠ Action for the current Render staging:** it advertises a public URL, so dev-login
+      will now be OFF there — set `COLLECTIVE_ALLOW_DEV_LOGIN=1` to keep using it with test data until
+      Microsoft sign-in is live, then remove it for real production.
 - [ ] **MFA + device registration** (issues #14–#15) and **SCIM** per spec §6 — required for the full
       access-control posture; scope with the sponsor.
 - [ ] Confirm the idle-session timeout (15 min, §2.6.1) and the RBAC/audit invariants are intact
@@ -105,5 +107,6 @@ own; do them top to bottom. Cross-references: `docs/deploy.md` (topology), `docs
 | `COLLECTIVE_ALLOWED_ORIGINS` | CORS allowlist | your web origin(s) |
 | `COLLECTIVE_BAA` | Seed executed BAAs at boot | `assemblyai,claudeWorkspace,microsoft` (only signed ones) |
 | `COLLECTIVE_PHI_FAILSAFE` | `0` loosens the unanswered-flag rule | unset (fail-safe on) |
+| `COLLECTIVE_ALLOW_DEV_LOGIN` | Force passwordless dev-login on/off | unset in prod (off); `1` on test-data staging |
 | `GRAPH_TENANT_ID` / `GRAPH_CLIENT_ID` / `GRAPH_CLIENT_SECRET` / `GRAPH_REDIRECT_URI` | Microsoft Entra sign-in + calendar | set (after BAA) |
 | `OAUTH_SCOPES` | MCP connector scope set | optional (has a default) |

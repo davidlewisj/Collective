@@ -36,7 +36,7 @@ import { search } from "./search.js";
 import { Db, linkOrProvisionUser, newId, userByEmail } from "./store.js";
 import { MsGraph } from "./msgraph.js";
 import { OAUTH_SCOPES, OAuthProvider } from "./oauth.js";
-import { webOrigin as resolveWebOrigin } from "./config.js";
+import { devLoginAllowed, webOrigin as resolveWebOrigin } from "./config.js";
 import { Transcriber } from "./adapters/transcriber.js";
 import { MockVoiceEngine, VoiceEngine } from "./adapters/voice.js";
 import { AudioStore, MemoryAudioStore } from "./persist.js";
@@ -159,7 +159,11 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
   /* ------------------------------- auth -------------------------------- */
 
+  const allowDevLogin = devLoginAllowed();
+
   app.post("/auth/dev-login", async (req, reply) => {
+    // Passwordless sign-in shortcut — never reachable on a public deploy.
+    if (!allowDevLogin) return fail(reply, 403, "dev login is disabled on this deployment");
     const { email } = z.object({ email: z.string().email() }).parse(req.body);
     const user = userByEmail(db, email);
     if (!user || user.deactivated) return fail(reply, 404, "unknown user");
@@ -176,7 +180,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   const webOrigin = (deps.webOrigin ?? resolveWebOrigin()).replace(/\/+$/, "");
   const oauthStates = new Map<string, number>(); // state -> createdAt (CSRF)
 
-  app.get("/auth/config", async () => ({ microsoft: !!graph }));
+  app.get("/auth/config", async () => ({ microsoft: !!graph, devLogin: allowDevLogin }));
 
   app.get("/auth/microsoft", async (_req, reply) => {
     if (!graph) return fail(reply, 404, "microsoft sign-in not configured");

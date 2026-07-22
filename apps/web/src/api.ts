@@ -297,8 +297,8 @@ export async function fetchAudioBlob(id: string): Promise<Blob | null> {
 
 /* --------------------------------- auth -------------------------------- */
 
-export function getAuthConfig(): Promise<{ microsoft: boolean }> {
-  return api<{ microsoft: boolean }>("/auth/config");
+export function getAuthConfig(): Promise<{ microsoft: boolean; devLogin: boolean }> {
+  return api<{ microsoft: boolean; devLogin: boolean }>("/auth/config");
 }
 
 /* ------------------------------- settings ------------------------------ */
