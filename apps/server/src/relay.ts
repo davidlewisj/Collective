@@ -39,10 +39,28 @@ export interface Upstream {
 
 export type UpstreamFactory = (params: { sampleRate: number }) => Upstream;
 
+/**
+ * Universal-3-5 Pro v3 streaming connection URL. US-pinned host for data
+ * residency (the default `streaming.assemblyai.com` is Edge Routing and may
+ * leave the US). `speech_model` is set explicitly; `mode` trades latency vs
+ * accuracy (balanced suits meeting captions). `format_turns` is intentionally
+ * absent — it's not a U3.5-Pro knob (formatting tracks end_of_turn there).
+ */
+export function buildStreamingUrl(base: string, params: { sampleRate: number }): string {
+  const q = new URLSearchParams({
+    sample_rate: String(params.sampleRate),
+    encoding: "pcm_s16le",
+    speech_model: "universal-3-5-pro",
+    mode: process.env.ASSEMBLYAI_STREAMING_MODE ?? "balanced",
+    speaker_labels: "true",
+  });
+  return `${base}?${q.toString()}`;
+}
+
 export function makeAssemblyAiUpstream(apiKey: string): UpstreamFactory {
-  const base = process.env.ASSEMBLYAI_STREAMING_URL ?? "wss://streaming.assemblyai.com/v3/ws";
+  const base = process.env.ASSEMBLYAI_STREAMING_URL ?? "wss://streaming.us.assemblyai.com/v3/ws";
   return ({ sampleRate }) => {
-    const url = `${base}?sample_rate=${sampleRate}&encoding=pcm_s16le&format_turns=true&speaker_labels=true`;
+    const url = buildStreamingUrl(base, { sampleRate });
     const ws = new WebSocket(url, { headers: { authorization: apiKey } });
     const pending: Array<Buffer | string> = [];
     ws.on("open", () => {

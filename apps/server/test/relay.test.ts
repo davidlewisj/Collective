@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import { describe, expect, it } from "vitest";
 import { AuditLog } from "../src/audit.js";
 import { LiveHub } from "../src/pipeline.js";
-import { StreamingRelay, Upstream } from "../src/relay.js";
+import { StreamingRelay, Upstream, buildStreamingUrl } from "../src/relay.js";
 import { createDb, seedUsers } from "../src/store.js";
 import type { Meeting } from "@collective/shared";
 import type WebSocket from "ws";
@@ -138,5 +138,18 @@ describe("streaming relay (IN-2)", () => {
     client.emit("message", Buffer.from([9, 9]), true); // no crash, silently dropped
     expect(captions).toHaveLength(0);
     expect(upstream.closed).toBe(true);
+  });
+});
+
+describe("buildStreamingUrl (U3.5 Pro v3)", () => {
+  it("pins the flagship model + mode and drops the stale format_turns knob", () => {
+    const url = buildStreamingUrl("wss://streaming.us.assemblyai.com/v3/ws", { sampleRate: 16000 });
+    const qs = new URL(url).searchParams;
+    expect(qs.get("speech_model")).toBe("universal-3-5-pro");
+    expect(qs.get("mode")).toBe("balanced");
+    expect(qs.get("encoding")).toBe("pcm_s16le");
+    expect(qs.get("sample_rate")).toBe("16000");
+    expect(qs.get("speaker_labels")).toBe("true");
+    expect(url).not.toContain("format_turns");
   });
 });

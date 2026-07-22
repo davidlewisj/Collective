@@ -32,9 +32,9 @@ Honest, story-level map of what exists in this repository versus the design spec
 |---|---|---|
 | Meeting record (audio/transcript/notes), notes private-by-default | §2.4 | ✅ |
 | Diarized transcription — mock adapter | §2.2 | ✅ deterministic dev engine |
-| Diarized transcription — AssemblyAI async (`speaker_labels`, eager delete) | §2.2 | 🔶 real REST adapter written; needs a keyed account + BAA to validate |
+| Diarized transcription — AssemblyAI async (`speech_models: [universal-3-5-pro, universal-2]`, `speaker_labels` + `speaker_options` range, eager delete) | §2.2 | 🔶 real REST adapter written; needs a keyed account + BAA to validate |
 | Voice memos — Sync API | §2.2 | 🔶 same |
-| Live captions — streaming relay to AssemblyAI v3 (`speaker_labels`, PCM16 relay, §6.6-gated, idle cost guard) | §2.2 (IN-2) | ✅ mock mode + real relay — validated against the live AssemblyAI endpoint on a keyed deployment (2026-07-20): captions render in real time while speaking |
+| Live captions — streaming relay to AssemblyAI v3 US host (`speech_model=universal-3-5-pro`, `mode=balanced`, `speaker_labels`, PCM16 relay, §6.6-gated, idle cost guard) | §2.2 (IN-2) | ✅ mock mode + real relay — validated against the live AssemblyAI endpoint on a keyed deployment (2026-07-20): captions render in real time while speaking |
 | Calendar naming — Microsoft Graph calendar (signed-in users) with per-user ICS feed fallback; untitled captures named from the current event, attendees matched by email | AT-3 | ✅ both paths tested (Graph via faked API; ICS parser/matching); precedence Graph → ICS → untitled |
 | Claude connector tokens — long-lived, revocable, MCP-surface-only bearer tokens + in-app "Connect Claude Desktop" setup card (Claude Desktop via mcp-remote) | §6.2 (revised: connector-first AI) | ✅ tested (mint/use/scope/revoke) |
 | claude.ai connector — admin-minted OAuth client + browser consent (Admin → "Claude connectors"); users authorize as themselves | §6.2, §6.4 | ✅ built + tested (dev slice) — 🔶 live claude.ai connect needs the public HTTPS deploy |

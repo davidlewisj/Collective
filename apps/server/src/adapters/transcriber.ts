@@ -13,9 +13,13 @@ import { newId } from "../store.js";
 
 export interface Transcriber {
   readonly name: string;
-  transcribe(meeting: Meeting, audio: Buffer, opts: { speakersExpected?: number }): Promise<Utterance[]>;
+  /** `maxSpeakers`: upper bound of the speaker range (a hint, not an exact count). */
+  transcribe(meeting: Meeting, audio: Buffer, opts: { maxSpeakers?: number }): Promise<Utterance[]>;
   transcribeMemoSync(audio: Buffer): Promise<string>;
 }
+
+/** Current flagship first, broad-coverage fallback (ordered availability list). */
+const SPEECH_MODELS = ["universal-3-5-pro", "universal-2"];
 
 /* ------------------------------- mock ---------------------------------- */
 
@@ -75,7 +79,7 @@ export class AssemblyAiTranscriber implements Transcriber {
     return { authorization: this.apiKey };
   }
 
-  async transcribe(meeting: Meeting, audio: Buffer, opts: { speakersExpected?: number }): Promise<Utterance[]> {
+  async transcribe(meeting: Meeting, audio: Buffer, opts: { maxSpeakers?: number }): Promise<Utterance[]> {
     const body = new Uint8Array(audio); // copy into a plain ArrayBuffer for fetch's BodyInit typing
     const up = await fetch(`${AAI}/upload`, { method: "POST", headers: this.headers(), body });
     if (!up.ok) throw new Error(`assemblyai upload failed: ${up.status}`);
@@ -86,8 +90,11 @@ export class AssemblyAiTranscriber implements Transcriber {
       headers: { ...this.headers(), "content-type": "application/json" },
       body: JSON.stringify({
         audio_url: upload_url,
+        speech_models: SPEECH_MODELS,
         speaker_labels: true,
-        ...(opts.speakersExpected ? { speakers_expected: opts.speakersExpected } : {}),
+        // Attendee count is a hint, not a certainty (the room ≠ the invite),
+        // so give diarization a range rather than an exact `speakers_expected`.
+        ...(opts.maxSpeakers ? { speaker_options: { min_speakers_expected: 1, max_speakers_expected: opts.maxSpeakers } } : {}),
       }),
     });
     if (!create.ok) throw new Error(`assemblyai create failed: ${create.status}`);
