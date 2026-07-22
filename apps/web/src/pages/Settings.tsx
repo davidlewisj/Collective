@@ -5,9 +5,71 @@ import {
   getConnectorTokenStatus,
   getSettings,
   mintConnectorToken,
+  putAppearance,
   putSettings,
   revokeConnectorToken,
 } from "../api";
+import { useAuth } from "../auth";
+import { hueVar } from "../components/Avatar";
+import { IconCheck } from "../components/icons";
+
+/** 0 = accent (default); 1..8 = a speaker-ramp swatch. */
+function swatchVar(i: number): string {
+  return i === 0 ? "var(--c-juniper)" : hueVar(i);
+}
+
+function BubbleColorCard() {
+  const { user } = useAuth();
+  const [selected, setSelected] = useState<number>(user?.bubbleHue ?? 0);
+  const [saved, setSaved] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  const pick = async (i: number) => {
+    setSelected(i);
+    setSaved("saving");
+    try {
+      await putAppearance(i);
+      setSaved("saved");
+    } catch {
+      setSaved("error");
+    }
+  };
+
+  return (
+    <section className="admin-card admin-card-wide">
+      <h2 className="section-heading">Your bubble color</h2>
+      <p className="admin-hint">
+        The color of your speech bubbles when you're the meeting facilitator — everyone sees it on your
+        turns. Pick one:
+      </p>
+      <div className="swatch-row" role="radiogroup" aria-label="Bubble color">
+        {[0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+          <button
+            key={i}
+            type="button"
+            role="radio"
+            aria-checked={selected === i}
+            aria-label={i === 0 ? "Default (accent)" : `Color ${i}`}
+            className={`swatch${selected === i ? " swatch-on" : ""}`}
+            style={{ "--swatch": swatchVar(i) } as React.CSSProperties}
+            onClick={() => void pick(i)}
+          >
+            {selected === i && <IconCheck size={16} />}
+          </button>
+        ))}
+      </div>
+      <div className="swatch-preview">
+        <span className="bubble-group bubble-right bubble-kind-owner" style={{ "--bubble": swatchVar(selected) } as React.CSSProperties}>
+          <span className="bubble-stack">
+            <span className="bubble">This is how your turns will look.</span>
+          </span>
+        </span>
+      </div>
+      <p className="detail-muted" aria-live="polite">
+        {saved === "saving" ? "Saving…" : saved === "saved" ? "Saved." : saved === "error" ? "Couldn't save." : ""}
+      </p>
+    </section>
+  );
+}
 
 function CalendarCard() {
   const [url, setUrl] = useState("");
@@ -186,6 +248,7 @@ export function SettingsPage() {
         </Link>
         <h1 className="admin-headline">Settings</h1>
       </header>
+      <BubbleColorCard />
       <CalendarCard />
       <ConnectClaudeCard />
     </main>

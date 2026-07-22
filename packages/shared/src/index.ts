@@ -18,6 +18,13 @@ export interface User {
   entityId: string;
   /** Deterministic speaker hue index 1..8, assigned at first attribution (spec §7.2.3). */
   speakerHue: number;
+  /**
+   * Personal chat-bubble color the user picked (§7.3 redesign). 0 = the app
+   * accent (default); 1..8 = an index into the speaker ramp. A swatch pick,
+   * never a free hex, so it stays token-resolved + contrast-audited. Absent =
+   * fall back to `speakerHue`. Exposed via GET /users so other viewers see it.
+   */
+  bubbleHue?: number;
   deactivated?: boolean;
 }
 

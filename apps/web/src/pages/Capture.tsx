@@ -19,6 +19,8 @@ import { blobToBase64, playConsentTone } from "../lib/audio";
 import { fmtClock } from "../lib/format";
 import { useNote } from "../lib/useNote";
 import { useUsers } from "../lib/useUsers";
+import { useAuth } from "../auth";
+import { buildSpeakerStyles, identityKey } from "../lib/speakerColors";
 import { Avatar } from "../components/Avatar";
 import { NotesEditor } from "../components/NotesEditor";
 import { Waveform } from "../components/Waveform";
@@ -128,11 +130,13 @@ function LiveTranscript({
   lines,
   liveCaptions,
   speakers,
+  ownerUserId,
   onNameSpeaker,
 }: {
   lines: CaptionLine[];
   liveCaptions: boolean;
-  speakers: Record<string, string>;
+  speakers: Record<string, { name: string; userId: string | null }>;
+  ownerUserId: string;
   onNameSpeaker: (cluster: string, target: { userId?: string; guestLabel?: string }) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -141,7 +145,7 @@ function LiveTranscript({
   const announceRef = useRef({ last: 0, queued: "" });
   const [announcement, setAnnouncement] = useState("");
   const [namingCluster, setNamingCluster] = useState<string | null>(null);
-  const { users } = useUsers();
+  const { users, byId } = useUsers();
 
   // Stable "Speaker n" numbering by first appearance.
   const clusterOrder = useMemo(() => {
@@ -149,6 +153,18 @@ function LiveTranscript({
     for (const l of lines) if (!order.includes(l.cluster)) order.push(l.cluster);
     return order;
   }, [lines]);
+
+  // Bubble color/side per cluster: map each named cluster to a user/guest, then
+  // reuse the shared resolver (facilitator → right, others → distinct left).
+  const styles = useMemo(() => {
+    const refs = clusterOrder.map((cluster) => {
+      const s = speakers[cluster];
+      if (s?.userId) return { speakerUserId: s.userId, cluster };
+      if (s) return { guestLabel: s.name, cluster };
+      return { cluster };
+    });
+    return buildSpeakerStyles(ownerUserId, refs, byId);
+  }, [clusterOrder, speakers, ownerUserId, byId]);
 
   // Group consecutive lines by cluster into speaker blocks.
   const blocks = useMemo(() => {
@@ -206,18 +222,26 @@ function LiveTranscript({
           </p>
         )}
         {blocks.map((b, i) => {
-          const named = speakers[b.cluster];
+          const named = speakers[b.cluster]?.name;
+          const st = styles.get(identityKey({ cluster: b.cluster, ...(speakers[b.cluster]?.userId ? { speakerUserId: speakers[b.cluster]!.userId! } : named ? { guestLabel: named } : {}) })) ?? {
+            side: "left" as const,
+            kind: "unknown" as const,
+          };
           const popKey = `${b.cluster}-${i}`;
           return (
-            <div className="live-block" key={popKey}>
-              <span className="live-block-speaker">
+            <div
+              className={`bubble-group bubble-${st.side} bubble-kind-${st.kind}`}
+              key={popKey}
+              style={st.colorVar ? ({ "--bubble": st.colorVar } as React.CSSProperties) : undefined}
+            >
+              <span className="bubble-head live-block-speaker">
                 <button
                   type="button"
-                  className={`speaker-chip speaker-chip-enter${named ? "" : " speaker-chip-unknown"}`}
+                  className="bubble-speaker"
                   title="Tap to name this voice"
                   onClick={() => setNamingCluster(namingCluster === popKey ? null : popKey)}
                 >
-                  {named ?? `Speaker ${clusterOrder.indexOf(b.cluster) + 1}`}
+                  <span className="bubble-name">{named ?? `Speaker ${clusterOrder.indexOf(b.cluster) + 1}`}</span>
                 </button>
                 {namingCluster === popKey && (
                   <LiveSpeakerPopover
@@ -231,9 +255,9 @@ function LiveTranscript({
                   />
                 )}
               </span>
-              <div className="live-block-lines">
+              <div className="bubble-stack">
                 {b.lines.map((l) => (
-                  <p key={l.key} className={`caption${l.interim ? " caption-interim" : ""}`}>
+                  <p key={l.key} className={`bubble${l.interim ? " bubble-interim" : ""}`}>
                     {l.text}
                   </p>
                 ))}
@@ -258,6 +282,7 @@ function LiveTranscript({
 
 export function CapturePage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [phase, setPhase] = useState<Phase>("setup");
   const [mode, setMode] = useState<MeetingMode>("virtual_desktop");
   const [title, setTitle] = useState("");
@@ -266,7 +291,7 @@ export function CapturePage() {
   const [busy, setBusy] = useState(false);
   const [lines, setLines] = useState<CaptionLine[]>([]);
   const [liveCaptions, setLiveCaptions] = useState(true);
-  const [speakers, setSpeakers] = useState<Record<string, string>>({});
+  const [speakers, setSpeakers] = useState<Record<string, { name: string; userId: string | null }>>({});
   const [elapsed, setElapsed] = useState(0);
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const [notesOpen, setNotesOpen] = useState(false);
@@ -416,7 +441,7 @@ export function CapturePage() {
         onEvent: (event, data) => {
           if (event === "caption") onCaption(data);
           else if (event === "speakers" && data && typeof data === "object") {
-            setSpeakers(data as Record<string, string>);
+            setSpeakers(data as Record<string, { name: string; userId: string | null }>);
           } else if (event === "status") {
             const payload = data as { status?: string; liveCaptions?: boolean };
             if (typeof payload?.liveCaptions === "boolean") setLiveCaptions(payload.liveCaptions);
@@ -632,6 +657,7 @@ export function CapturePage() {
             lines={lines}
             liveCaptions={liveCaptions}
             speakers={speakers}
+            ownerUserId={user?.id ?? ""}
             onNameSpeaker={(cluster, target) => void handleNameSpeaker(cluster, target)}
           />
           <aside className={`notes-pane${notesOpen ? " notes-pane-open" : ""}`}>

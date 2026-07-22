@@ -13,7 +13,8 @@ import {
 import { useAuth } from "../auth";
 import { useUsers } from "../lib/useUsers";
 import { fmtClock } from "../lib/format";
-import { Avatar, hueForUser } from "../components/Avatar";
+import { Avatar } from "../components/Avatar";
+import { buildSpeakerStyles } from "../lib/speakerColors";
 import { NotesEditor } from "../components/NotesEditor";
 import { ShareSheet } from "../components/ShareSheet";
 import { useNote } from "../lib/useNote";
@@ -280,6 +281,11 @@ function TranscriptSection({
     return out;
   }, [utterances]);
 
+  const styles = useMemo(
+    () => buildSpeakerStyles(meeting.ownerUserId, utterances, byId),
+    [meeting.ownerUserId, utterances, byId],
+  );
+
   const query = q.trim();
   const visible = query
     ? blocks.filter((b) => b.lines.some((l) => l.text.toLowerCase().includes(query.toLowerCase())))
@@ -304,47 +310,53 @@ function TranscriptSection({
       {query && visible.length === 0 && utterances.length > 0 && (
         <p className="detail-muted">No matches for “{query}”.</p>
       )}
-      {visible.map((b, i) => {
-        const speaker = b.head.speakerUserId ? byId.get(b.head.speakerUserId) : undefined;
-        const unknown = !b.head.speakerUserId && !b.head.guestLabel;
-        const name = speaker
-          ? speaker.displayName
-          : (b.head.guestLabel ?? `Unknown speaker ${unknownOrder.indexOf(b.head.cluster) + 1}`);
-        const popKey = `${b.head.id}-${i}`;
-        return (
-          <div className="transcript-block" key={popKey}>
-            <div className="transcript-block-head">
-              <button
-                type="button"
-                className={`speaker-chip${unknown ? " speaker-chip-unknown" : ""}`}
-                style={speaker ? { color: hueForUser(speaker) } : undefined}
-                title="Correct speaker"
-                onClick={() => setPopoverFor(popoverFor === popKey ? null : popKey)}
-              >
-                {unknown ? null : <Avatar user={speaker} name={b.head.guestLabel ?? name} />}
-                {name}
-              </button>
-              <span className="mono transcript-ts">{fmtClock(b.head.startMs)}</span>
-              {popoverFor === popKey && (
-                <SpeakerPopover
-                  meeting={meeting}
-                  users={users}
-                  utterance={b.head}
-                  onApplied={onUtterances}
-                  onClose={() => setPopoverFor(null)}
-                />
-              )}
+      <div className="bubble-thread">
+        {visible.map((b, i) => {
+          const st = styles.get(b.key) ?? { side: "left" as const, kind: "unknown" as const };
+          const speaker = b.head.speakerUserId ? byId.get(b.head.speakerUserId) : undefined;
+          const name =
+            st.kind === "unknown"
+              ? `Speaker ${unknownOrder.indexOf(b.head.cluster) + 1}`
+              : (speaker?.displayName ?? b.head.guestLabel ?? "Speaker");
+          const popKey = `${b.head.id}-${i}`;
+          return (
+            <div
+              className={`bubble-group bubble-${st.side} bubble-kind-${st.kind}`}
+              key={popKey}
+              style={st.colorVar ? ({ "--bubble": st.colorVar } as React.CSSProperties) : undefined}
+            >
+              <div className="bubble-head">
+                <button
+                  type="button"
+                  className="bubble-speaker"
+                  title="Correct speaker"
+                  onClick={() => setPopoverFor(popoverFor === popKey ? null : popKey)}
+                >
+                  {st.kind !== "unknown" && <Avatar user={speaker} name={b.head.guestLabel ?? name} />}
+                  <span className="bubble-name">{name}</span>
+                </button>
+                {popoverFor === popKey && (
+                  <SpeakerPopover
+                    meeting={meeting}
+                    users={users}
+                    utterance={b.head}
+                    onApplied={onUtterances}
+                    onClose={() => setPopoverFor(null)}
+                  />
+                )}
+              </div>
+              <div className="bubble-stack">
+                {b.lines.map((l) => (
+                  <p key={l.id} className="bubble">
+                    {highlight(l.text, query)}
+                  </p>
+                ))}
+              </div>
+              <span className="mono bubble-ts">{fmtClock(b.head.startMs)}</span>
             </div>
-            <div className="transcript-lines">
-              {b.lines.map((l) => (
-                <p key={l.id} className="transcript-line">
-                  {highlight(l.text, query)}
-                </p>
-              ))}
-            </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </section>
   );
 }

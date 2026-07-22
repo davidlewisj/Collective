@@ -437,8 +437,26 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     return { ok: true };
   });
   app.get("/users", async () => ({
-    users: [...db.users.values()].map(({ id, displayName, role, speakerHue }) => ({ id, displayName, role, speakerHue })),
+    users: [...db.users.values()].map(({ id, displayName, role, speakerHue, bubbleHue }) => ({
+      id,
+      displayName,
+      role,
+      speakerHue,
+      bubbleHue,
+    })),
   }));
+
+  app.put("/me/appearance", async (req, reply) => {
+    // Self-only personal bubble color (0 = accent, 1..8 = speaker ramp). Lives
+    // on the User record so other viewers see it on the caller's bubbles.
+    const bubbleHue = (req.body as { bubbleHue?: unknown } | undefined)?.bubbleHue;
+    if (typeof bubbleHue !== "number" || !Number.isInteger(bubbleHue) || bubbleHue < 0 || bubbleHue > 8) {
+      return fail(reply, 400, "bubbleHue must be an integer 0..8");
+    }
+    req.user.bubbleHue = bubbleHue;
+    audit.emit({ actorUserId: req.user.id, action: "appearance.updated", detail: `bubbleHue=${bubbleHue}` });
+    return { user: req.user };
+  });
 
   /* ----------------------------- meetings ------------------------------ */
 

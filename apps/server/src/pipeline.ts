@@ -45,12 +45,15 @@ export function speakerNameFn(db: Db, utts: Utterance[]): (u: Utterance) => stri
   };
 }
 
-/** Resolve the live speaker-name map for SSE ("speakers" events). */
-export function liveSpeakerNames(db: Db, meetingId: string): Record<string, string> {
-  const out: Record<string, string> = {};
+/** Resolve the live speaker map for SSE ("speakers" events): cluster → who. */
+export function liveSpeakerNames(
+  db: Db,
+  meetingId: string,
+): Record<string, { name: string; userId: string | null }> {
+  const out: Record<string, { name: string; userId: string | null }> = {};
   for (const [cluster, a] of Object.entries(db.liveSpeakers.get(meetingId) ?? {})) {
     const name = a.userId ? db.users.get(a.userId)?.displayName : a.guestLabel;
-    if (name) out[cluster] = name;
+    if (name) out[cluster] = { name, userId: a.userId ?? null };
   }
   return out;
 }
