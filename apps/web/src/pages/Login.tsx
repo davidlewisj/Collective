@@ -35,11 +35,20 @@ export function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [microsoft, setMicrosoft] = useState(false);
+  // Hidden until the server confirms dev-login is allowed — locked-down by
+  // default so the passwordless form never shows on a public deployment.
+  const [devLogin, setDevLogin] = useState(false);
 
   useEffect(() => {
     getAuthConfig()
-      .then((c) => setMicrosoft(c.microsoft))
-      .catch(() => setMicrosoft(false));
+      .then((c) => {
+        setMicrosoft(c.microsoft);
+        setDevLogin(c.devLogin);
+      })
+      .catch(() => {
+        setMicrosoft(false);
+        setDevLogin(false);
+      });
   }, []);
 
   // Returning from Microsoft sign-in: the server redirects here with the
@@ -85,44 +94,56 @@ export function LoginPage() {
       <form className="login-card" onSubmit={(e) => void submit(e)}>
         <h1 className="login-wordmark">Collective</h1>
         <p className="login-sub">Meeting notes your whole practice can trust.</p>
-        <label htmlFor="login-email">Work email</label>
-        <input
-          id="login-email"
-          type="email"
-          autoComplete="email"
-          placeholder="you@collective.dev"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          autoFocus
-        />
-        <button type="submit" className="btn btn-block" disabled={busy || !email.trim()}>
-          {busy ? "Signing in…" : "Sign in"}
-        </button>
+        {devLogin && (
+          <>
+            <label htmlFor="login-email">Work email</label>
+            <input
+              id="login-email"
+              type="email"
+              autoComplete="email"
+              placeholder="you@collective.dev"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoFocus
+            />
+            <button type="submit" className="btn btn-block" disabled={busy || !email.trim()}>
+              {busy ? "Signing in…" : "Sign in"}
+            </button>
+          </>
+        )}
         {microsoft && (
           <a className="btn-quiet btn-block login-ms" href={apiUrl("/auth/microsoft")}>
             Sign in with Microsoft
           </a>
+        )}
+        {!devLogin && !microsoft && (
+          <p className="login-sub" role="status">
+            Sign-in isn't configured for this deployment yet. Ask your administrator to enable Microsoft
+            sign-in.
+          </p>
         )}
         {error && (
           <p className="field-error" role="alert">
             {error}
           </p>
         )}
-        <div className="login-seeds">
-          <span className="section-label">Dev sign-in</span>
-          <div className="login-seed-chips">
-            {SEED_USERS.map((s) => (
-              <button
-                key={s.email}
-                type="button"
-                className="chip chip-tappable"
-                onClick={() => setEmail(s.email)}
-              >
-                {s.label}
-              </button>
-            ))}
+        {devLogin && (
+          <div className="login-seeds">
+            <span className="section-label">Dev sign-in</span>
+            <div className="login-seed-chips">
+              {SEED_USERS.map((s) => (
+                <button
+                  key={s.email}
+                  type="button"
+                  className="chip chip-tappable"
+                  onClick={() => setEmail(s.email)}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </form>
     </main>
   );
