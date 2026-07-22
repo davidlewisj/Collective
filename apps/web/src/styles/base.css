@@ -291,6 +291,34 @@ label {
   }
 }
 
+/* A check that pops + settles as a save/consent step completes. */
+@keyframes check-draw {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* List/detail rows arrive with a quiet fade + short rise (staggered). */
+@keyframes list-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-2));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* Screens enter with a quiet fade + 4px rise (brief: list→detail). */
 .page-enter {
   animation: app-settle var(--motion-base) var(--motion-ease-decelerate);

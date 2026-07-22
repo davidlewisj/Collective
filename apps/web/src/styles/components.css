@@ -188,7 +188,28 @@ button.speaker-chip:hover {
   gap: var(--space-2);
 }
 
+.notes-head-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--c-ink);
+}
+
+.notes-head-label {
+  color: var(--c-ink);
+}
+
+.notes-head-tail {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
 .only-you-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   font: var(--type-caption);
   color: var(--c-sage);
   background: color-mix(in srgb, var(--c-sage) 14%, transparent);
@@ -197,18 +218,57 @@ button.speaker-chip:hover {
 }
 
 .notes-save {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   font: var(--type-caption);
   color: var(--c-sage);
-  margin-left: auto;
   transition: color var(--motion-fast) var(--motion-ease-standard);
 }
 
+/* The check draws itself in as the save settles. */
 .notes-save-saved {
   color: var(--c-state-success);
 }
 
+.notes-save-saved svg {
+  animation: check-draw var(--motion-base) var(--motion-ease-decelerate);
+}
+
 .notes-save-error {
   color: var(--c-state-error);
+}
+
+.notes-mark-btn {
+  font: var(--type-caption);
+  padding: var(--space-1) var(--space-2);
+  color: var(--c-sage);
+}
+
+.notes-mark-btn:hover {
+  color: var(--c-juniper);
+}
+
+.notes-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-1);
+  color: var(--c-sage);
+  border-radius: var(--radius-control);
+  transition:
+    transform var(--motion-base) var(--motion-ease-standard),
+    color var(--motion-fast) var(--motion-ease-standard),
+    background-color var(--motion-fast) var(--motion-ease-standard);
+}
+
+.notes-chevron:hover {
+  color: var(--c-ink);
+  background: color-mix(in srgb, var(--c-ink) 6%, transparent);
+}
+
+.notes-open .notes-chevron {
+  transform: rotate(180deg);
 }
 
 .notes-textarea {
@@ -216,6 +276,51 @@ button.speaker-chip:hover {
   resize: vertical;
   line-height: inherit;
   min-height: calc(var(--space-8) * 2);
+}
+
+/* Collapsible variant: the header stays put; the body slides open by
+   animating a grid row from 0fr → 1fr (height-to-auto, GPU-cheap). */
+.notes-collapsible .notes-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  overflow: hidden;
+  transition: grid-template-rows var(--motion-slow) var(--motion-ease-standard);
+}
+
+.notes-collapsible.notes-open .notes-body {
+  grid-template-rows: 1fr;
+}
+
+/* The grid child clips the textarea so 0fr can reach a true zero height. */
+.notes-collapsible .notes-body-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* One-line-ish hint shown while collapsed; clicking anywhere expands. */
+.notes-preview {
+  width: 100%;
+  text-align: left;
+  font: var(--type-body);
+  color: var(--c-sage);
+  padding: var(--space-2) var(--space-3);
+  border: var(--app-hairline) dashed color-mix(in srgb, var(--c-mist) 90%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--c-linen) 55%, transparent);
+  cursor: text;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  transition:
+    border-color var(--motion-fast) var(--motion-ease-standard),
+    background-color var(--motion-fast) var(--motion-ease-standard);
+}
+
+.notes-preview:hover {
+  border-color: color-mix(in srgb, var(--c-juniper) 40%, var(--c-mist));
+  background: color-mix(in srgb, var(--c-juniper) 6%, transparent);
 }
 
 /* ------------------------------- waveform ------------------------------- */

@@ -507,6 +507,26 @@ export function MeetingDetailPage() {
 
   const note = useNote(id ?? null);
 
+  // Notes card open/closed is a remembered preference; if the user never chose,
+  // default to open when there's already something written.
+  const NOTES_OPEN_KEY = "collective.notes.open";
+  const [notesOpen, setNotesOpen] = useState<boolean>(
+    () => localStorage.getItem(NOTES_OPEN_KEY) === "1",
+  );
+  const notesUserSet = useRef(localStorage.getItem(NOTES_OPEN_KEY) !== null);
+  useEffect(() => {
+    if (!notesUserSet.current && note.loaded && note.body.trim().length > 0) {
+      setNotesOpen(true);
+    }
+  }, [note.loaded, note.body]);
+  const toggleNotes = () =>
+    setNotesOpen((v) => {
+      const next = !v;
+      notesUserSet.current = true;
+      localStorage.setItem(NOTES_OPEN_KEY, next ? "1" : "0");
+      return next;
+    });
+
   const load = useCallback(async () => {
     if (!id) return;
     try {
@@ -648,7 +668,15 @@ export function MeetingDetailPage() {
       )}
 
       <section className={sectionClass} style={sectionStyle(3)}>
-        <NotesEditor body={note.body} onChange={note.setBody} saveState={note.saveState} rows={6} />
+        <NotesEditor
+          body={note.body}
+          onChange={note.setBody}
+          saveState={note.saveState}
+          rows={6}
+          collapsible
+          open={notesOpen}
+          onToggle={toggleNotes}
+        />
       </section>
 
       {canTranscript && (

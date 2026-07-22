@@ -18,13 +18,15 @@ function isShared(m: Meeting): boolean {
   return x.shared === true || (Array.isArray(x.shares) && x.shares.length > 0);
 }
 
-function MeetingRow({ meeting }: { meeting: Meeting }) {
+function MeetingRow({ meeting, index }: { meeting: Meeting; index: number }) {
   const { byId } = useUsers();
   const when = meeting.startedAt ?? meeting.createdAt;
   const duration = meetingDuration(meeting.startedAt, meeting.endedAt);
   const attendees = [meeting.ownerUserId, ...meeting.attendeeUserIds];
+  // Quiet entrance stagger, capped so long lists don't cascade forever.
+  const delay = `calc(${Math.min(index, 6)} * var(--app-stagger))`;
   return (
-    <li>
+    <li className="list-row-item" style={{ animationDelay: delay }}>
       <Link className="meeting-row" to={`/m/${meeting.id}`}>
         <div className="meeting-row-main">
           <span className="meeting-row-title">{meeting.title || "Untitled meeting"}</span>
@@ -188,8 +190,8 @@ export function MeetingListPage() {
           <section key={g.label} className="list-group">
             <h2 className="list-group-label">{g.label}</h2>
             <ul className="list-rows">
-              {g.items.map((m) => (
-                <MeetingRow key={m.id} meeting={m} />
+              {g.items.map((m, i) => (
+                <MeetingRow key={m.id} meeting={m} index={i} />
               ))}
             </ul>
           </section>

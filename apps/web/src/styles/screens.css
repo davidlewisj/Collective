@@ -129,6 +129,10 @@
   border-top: var(--app-hairline) solid var(--c-mist);
 }
 
+.list-row-item {
+  animation: list-row-in var(--motion-base) var(--motion-ease-decelerate) both;
+}
+
 .meeting-row {
   display: flex;
   align-items: center;
@@ -138,12 +142,24 @@
   border-radius: var(--radius-card);
   color: inherit;
   text-decoration: none;
-  transition: background-color var(--motion-instant) var(--motion-ease-standard);
+  transition:
+    background-color var(--motion-fast) var(--motion-ease-standard),
+    transform var(--motion-fast) var(--motion-ease-standard);
 }
 
 .meeting-row:hover {
   background: color-mix(in srgb, var(--c-mist) 40%, transparent);
+  transform: translateX(var(--space-1));
   text-decoration: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .list-row-item {
+    animation: none;
+  }
+  .meeting-row:hover {
+    transform: none;
+  }
 }
 
 .meeting-row-main {
@@ -902,9 +918,23 @@
   transition: color var(--motion-instant) var(--motion-ease-standard);
 }
 
+.dock-btn svg {
+  transition: transform var(--motion-fast) var(--motion-ease-standard);
+}
+
 .dock-btn:hover:not(:disabled) {
   color: var(--c-ink);
   background: transparent;
+}
+
+.dock-btn:hover:not(:disabled) svg {
+  transform: translateY(calc(-1 * var(--space-1)));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dock-btn:hover:not(:disabled) svg {
+    transform: none;
+  }
 }
 
 .dock-hero {
