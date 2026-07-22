@@ -7,6 +7,8 @@ import { useUsers } from "../lib/useUsers";
 import { dateGroupLabel, fmtTimeOfDay, meetingDuration } from "../lib/format";
 import { Avatar } from "../components/Avatar";
 import { StateBadge } from "../components/Badges";
+import { RecordButton } from "../components/RecordButton";
+import { IconSearch, IconShield, IconSignOut, IconSliders } from "../components/icons";
 
 /** Some servers annotate meetings with their grants; render "Shared" if so. */
 type MeetingMaybeShared = Meeting & { shares?: ShareGrant[]; shared?: boolean };
@@ -136,11 +138,20 @@ export function MeetingListPage() {
       <header className="list-topbar">
         <span className="wordmark">Collective</span>
         <nav className="list-nav" aria-label="Account">
-          {showAdmin && <Link to="/admin">Admin</Link>}
-          <Link to="/settings">Settings</Link>
+          {showAdmin && (
+            <Link to="/admin" className="nav-link">
+              <IconShield size={20} />
+              <span>Admin</span>
+            </Link>
+          )}
+          <Link to="/settings" className="nav-link">
+            <IconSliders size={20} />
+            <span>Settings</span>
+          </Link>
           <span className="list-user">{user?.displayName}</span>
-          <button type="button" className="btn-quiet" onClick={logout}>
-            Sign out
+          <button type="button" className="btn-quiet nav-link" onClick={logout}>
+            <IconSignOut size={20} />
+            <span>Sign out</span>
           </button>
         </nav>
       </header>
@@ -149,6 +160,7 @@ export function MeetingListPage() {
         <label className="visually-hidden" htmlFor="global-search">
           Search meetings, summaries, and transcripts
         </label>
+        <IconSearch className="list-search-icon" size={20} aria-hidden="true" />
         <input
           id="global-search"
           type="search"
@@ -184,10 +196,9 @@ export function MeetingListPage() {
         ))
       )}
 
-      <button type="button" className="capture-pill" onClick={() => navigate("/capture")}>
-        <span className="capture-pill-dot" aria-hidden="true" />
-        Capture
-      </button>
+      <div className="capture-fab-wrap">
+        <RecordButton variant="fab" label="Record" onClick={() => navigate("/capture")} />
+      </div>
     </main>
   );
 }

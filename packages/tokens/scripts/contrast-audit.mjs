@@ -31,6 +31,7 @@ for (const mode of ["light", "dark"]) {
     [c.state.processing, c.linen, 3.0, "processing state (UI component)"],
     [c.state.shared, c.linen, 3.0, "shared state (UI component)"],
     [c.state.error, c.linen, 3.0, "error state (UI component)"],
+    [c.state.success, c.linen, 3.0, "success state (UI component)"],
     ...c.speaker.map((s, i) => [s, c.linen, 3.0, `speaker-${i + 1} chip on linen`]),
   ];
   for (const [fg, bg, min, label] of checks) {

@@ -22,6 +22,18 @@ import { useUsers } from "../lib/useUsers";
 import { Avatar } from "../components/Avatar";
 import { NotesEditor } from "../components/NotesEditor";
 import { Waveform } from "../components/Waveform";
+import { RecordButton } from "../components/RecordButton";
+import {
+  IconChevronLeft,
+  IconCheck,
+  IconFlag,
+  IconHand,
+  IconMic,
+  IconNotes,
+  IconPause,
+  IconPlay,
+  IconRecord,
+} from "../components/icons";
 
 type Phase = "setup" | "consent" | "recording" | "paused" | "stopping";
 
@@ -542,8 +554,9 @@ export function CapturePage() {
     <main className={`capture-page${isLive ? " capture-live" : ""}`}>
       <header className="capture-header">
         {!isLive && phase !== "stopping" && (
-          <button type="button" className="btn-quiet" onClick={() => navigate("/")}>
-            ← Back
+          <button type="button" className="btn-quiet nav-link" onClick={() => navigate("/")}>
+            <IconChevronLeft size={20} />
+            <span>Back</span>
           </button>
         )}
         <label className="visually-hidden" htmlFor="capture-title">
@@ -562,7 +575,10 @@ export function CapturePage() {
             <span className="capture-timer mono" aria-label="Elapsed time">
               {fmtClock(elapsed)}
             </span>
-            <span className="consent-chip consent-chip-ok">✓ Consent noted</span>
+            <span className="consent-chip consent-chip-ok">
+              <IconCheck size={16} />
+              Consent noted
+            </span>
             <span className={`record-dot-wrap${phase === "paused" ? " record-paused" : ""}`}>
               <span className="record-dot" aria-hidden="true" />
               <span className="visually-hidden">{phase === "paused" ? "Paused" : "Recording"}</span>
@@ -573,6 +589,9 @@ export function CapturePage() {
 
       {phase === "setup" && (
         <section className="capture-setup">
+          <span className="capture-setup-mark" aria-hidden="true">
+            <IconMic size={24} />
+          </span>
           <h1 className="capture-setup-headline">Start a capture</h1>
           <div className="segmented" role="radiogroup" aria-label="Meeting mode">
             <button
@@ -622,36 +641,45 @@ export function CapturePage() {
       )}
 
       {isLive && (
-        <div className="capture-controls">
-          {phase === "recording" ? (
-            <button type="button" className="btn-quiet" onClick={pause}>
-              Pause
-            </button>
-          ) : (
-            <button type="button" className="btn-quiet" onClick={resume}>
-              Resume
-            </button>
-          )}
-          <button type="button" className="btn-quiet" onClick={addMarker}>
-            ⚑ Flag moment
-          </button>
-          <button type="button" className="btn btn-stop" onClick={() => void stop()}>
-            Stop
-          </button>
+        <div className="capture-dock" role="group" aria-label="Recording controls">
           <button
             type="button"
-            className={`btn-quiet btn-objection${objectionArmed ? " armed" : ""}`}
-            onClick={() => void objection()}
+            className="dock-btn"
+            onClick={phase === "recording" ? pause : resume}
           >
-            {objectionArmed ? "Tap again — stops & deletes audio" : "Someone objected"}
+            {phase === "recording" ? <IconPause size={24} /> : <IconPlay size={24} />}
+            <span>{phase === "recording" ? "Pause" : "Resume"}</span>
+          </button>
+          <button type="button" className="dock-btn" onClick={addMarker}>
+            <IconFlag size={24} />
+            <span>Flag</span>
+          </button>
+          <div className="dock-hero">
+            <RecordButton
+              variant="hero"
+              state={phase === "paused" ? "paused" : "recording"}
+              label="Stop recording"
+              onClick={() => void stop()}
+            />
+            <span className="dock-hero-label">Stop</span>
+          </div>
+          <button
+            type="button"
+            className={`dock-btn dock-btn-danger${objectionArmed ? " armed" : ""}`}
+            onClick={() => void objection()}
+            title={objectionArmed ? "Stops recording and deletes the audio" : "A participant objected to recording"}
+          >
+            <IconHand size={24} />
+            <span>{objectionArmed ? "Delete audio?" : "Objection"}</span>
           </button>
           <button
             type="button"
-            className="btn-quiet notes-toggle"
+            className="dock-btn notes-toggle"
             aria-expanded={notesOpen}
             onClick={() => setNotesOpen((v) => !v)}
           >
-            {notesOpen ? "Hide notes" : "Notes"}
+            <IconNotes size={24} />
+            <span>{notesOpen ? "Hide" : "Notes"}</span>
           </button>
         </div>
       )}
@@ -670,22 +698,25 @@ export function CapturePage() {
                 className={`btn-quiet consent-step${consentMechanisms.has("verbal_announcement_attested") ? " done" : ""}`}
                 onClick={() => void recordConsent("verbal_announcement_attested")}
               >
-                {consentMechanisms.has("verbal_announcement_attested") ? "✓ Announced" : "I announced it"}
+                {consentMechanisms.has("verbal_announcement_attested") && <IconCheck size={16} />}
+                {consentMechanisms.has("verbal_announcement_attested") ? "Announced" : "I announced it"}
               </button>
               <button
                 type="button"
                 className={`btn-quiet consent-step${consentMechanisms.has("audible_tone") ? " done" : ""}`}
                 onClick={() => void recordConsent("audible_tone")}
               >
-                {consentMechanisms.has("audible_tone") ? "✓ Tone played" : "Play tone"}
+                {consentMechanisms.has("audible_tone") && <IconCheck size={16} />}
+                {consentMechanisms.has("audible_tone") ? "Tone played" : "Play tone"}
               </button>
             </div>
             <button
               type="button"
-              className="btn btn-block"
+              className="btn btn-block btn-record-start"
               disabled={busy || consentMechanisms.size === 0}
               onClick={() => void start()}
             >
+              <IconRecord size={20} />
               Start capture
             </button>
             {consentMechanisms.size === 0 && (
