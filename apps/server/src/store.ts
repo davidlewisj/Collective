@@ -16,6 +16,7 @@ import {
   ShareGrant,
   User,
   Utterance,
+  Voiceprint,
   speakerHueForId,
 } from "@collective/shared";
 
@@ -106,6 +107,8 @@ export interface Db {
   oauthAccessTokens: Map<string, OAuthAccessToken>; // token -> grant
   oauthRefreshTokens: Map<string, OAuthRefreshToken>; // token -> grant
   graphAuth: Map<string, GraphAuth>;
+  /** userId -> enrolled voice signature (biometric; consent- + BAA-gated). */
+  voiceprints: Map<string, Voiceprint>;
   baa: BaaRegistry;
   consentPolicy: ConsentPolicy;
   retention: RetentionPolicy;
@@ -135,7 +138,8 @@ export function createDb(): Db {
     oauthAccessTokens: new Map(),
     oauthRefreshTokens: new Map(),
     graphAuth: new Map(),
-    baa: { assemblyai: false, claudeWorkspace: false, microsoft: false },
+    voiceprints: new Map(),
+    baa: { assemblyai: false, claudeWorkspace: false, microsoft: false, voice: false },
     // WA-strict default (Q6): attestation mandatory before capture starts.
     consentPolicy: {
       requiredMechanisms: ["verbal_announcement_attested"],
@@ -207,7 +211,7 @@ export function linkOrProvisionUser(
  * Environment-driven policy seeds, so a .env file survives restarts of the
  * in-memory dev store (persistence proper is backlog PF-3):
  * - COLLECTIVE_BAA: comma list of registry entries to mark executed
- *   (assemblyai, claudeWorkspace, microsoft). Only set these after the
+ *   (assemblyai, claudeWorkspace, microsoft, voice). Only set these after the
  *   corresponding BAA is actually signed (docs/procurement-baa-runbook.md).
  * - COLLECTIVE_PHI_FAILSAFE=0: treat unanswered PHI flags as non-PHI
  *   (sponsor model); default stays fail-safe.
@@ -220,7 +224,7 @@ export function applyEnvOverrides(db: Db, env: NodeJS.ProcessEnv = process.env):
       .map((s) => s.trim())
       .filter(Boolean),
   );
-  for (const k of ["assemblyai", "claudeWorkspace", "microsoft"] as const) {
+  for (const k of ["assemblyai", "claudeWorkspace", "microsoft", "voice"] as const) {
     if (keys.has(k)) {
       db.baa[k] = true;
       applied.push(`baa.${k}=true`);

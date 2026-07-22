@@ -9,7 +9,7 @@ Honest, story-level map of what exists in this repository versus the design spec
 
 ## What runs today, end-to-end (verified live)
 
-`npm install && npm run dev:server && npm run dev:web` gives a working product on mock adapters: sign in (dev auth) → consent-gated capture → live captions (SSE) with **in-session speaker naming** → stop → diarized, name-attributed transcript → private notes → per-layer sharing → search → audit trail → MCP server answering `search_meetings` / `get_transcript` / `get_notes` / … over Streamable HTTP. **Summaries and action items are connector-territory (D10): users ask their own Claude, which reads the archive through the MCP connector.** 79 server tests cover the compliance core; the token contrast audit enforces WCAG AA in CI.
+`npm install && npm run dev:server && npm run dev:web` gives a working product on mock adapters: sign in (dev auth) → consent-gated capture → live captions (SSE) with **in-session speaker naming** → stop → diarized, name-attributed transcript → private notes → per-layer sharing → search → audit trail → MCP server answering `search_meetings` / `get_transcript` / `get_notes` / … over Streamable HTTP. **Summaries and action items are connector-territory (D10): users ask their own Claude, which reads the archive through the MCP connector.** 88 server tests cover the compliance core; the token contrast audit enforces WCAG AA in CI.
 
 ## Compliance core
 
@@ -38,7 +38,7 @@ Honest, story-level map of what exists in this repository versus the design spec
 | Calendar naming — Microsoft Graph calendar (signed-in users) with per-user ICS feed fallback; untitled captures named from the current event, attendees matched by email | AT-3 | ✅ both paths tested (Graph via faked API; ICS parser/matching); precedence Graph → ICS → untitled |
 | Claude connector tokens — long-lived, revocable, MCP-surface-only bearer tokens + in-app "Connect Claude Desktop" setup card (Claude Desktop via mcp-remote) | §6.2 (revised: connector-first AI) | ✅ tested (mint/use/scope/revoke) |
 | claude.ai connector — admin-minted OAuth client + browser consent (Admin → "Claude connectors"); users authorize as themselves | §6.2, §6.4 | ✅ built + tested (dev slice) — 🔶 live claude.ai connect needs the public HTTPS deploy |
-| Attribution v1: mic-channel identity, roster name cues, margin rule, corrections, unknown speakers | §2.3.1, §2.3.4 | ✅ tested |
+| Attribution v1: mic-channel identity, voice-profile match, roster name cues, margin rule, corrections, unknown speakers | §2.3.1, §2.3.4 | ✅ tested |
 | Summaries / action items / archive Q&A — via the user's own Claude through the MCP connector (backend summary job **removed**, D10; local heuristic titles remain) | §6.1 (revised) | ✅ connector surface tested (`get_meeting`/`get_transcript`/`get_notes`); Bedrock insight adapter deleted 2026-07-22 |
 | In-session speaker naming — tap a live caption chip to name the voice mid-meeting; applies to live captions instantly and lands on the final transcript as manual evidence (live↔batch clusters matched by text overlap) | §2.3.4 (D11) | ✅ tested incl. cross-diarization matching, owner-only, guest labels |
 | MCP server (5 tools, per-caller ACL, PHI gating, audit) | §6.2–6.4 | ✅ verified live over Streamable HTTP |
@@ -55,7 +55,7 @@ Honest, story-level map of what exists in this repository versus the design spec
 | Desktop shell (Electron): window/tray/hotkey, **system-audio loopback plumbing** via `setDisplayMediaRequestHandler` | §2.1.1, §2.7.1 | 🔶 source-verified; Windows loopback + macOS behavior require real hardware (checklist in docs/desktop-capture.md) |
 | Per-process WASAPI loopback, macOS Core Audio taps, AEC | §2.1.1 | 🚧 native modules (WC-2/3, MC-2/3) — Linux CI cannot build or exercise them |
 | Mobile apps (iOS/Android in-person capture) | §2.1.2 | 🚧 Phase 1.5; requires Xcode/Android toolchains + device testing |
-| Voice profiles / speaker-ID service | §2.3.3, §5 | 🚧 Phase 1.5 (GPU inference service) |
+| Voice profiles — self-enrollment (biometric consent), cross-meeting `voice_profile` attribution, right-to-erasure; `voice` BAA gate | §2.3.3, §5 (D14) | 🔶 built + tested on the mock engine; real speaker-ID vendor needs a keyed account + BAA to validate (like transcription) |
 | Teams/Graph attribution module | §2.3.2 | 🚧 Phase 2 (tenant admin prerequisites) |
 
 ## The gap to production, in one paragraph

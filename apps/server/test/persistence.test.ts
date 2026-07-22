@@ -27,7 +27,7 @@ describe("durable persistence", () => {
   it("round-trips full domain state through a snapshot (simulated restart)", async () => {
     const dir = tempDir();
     const ctx = makeCtx();
-    ctx.db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true };
+    ctx.db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true, voice: true };
     const t = await login(ctx, "dana@collective.dev");
     const id = await recordMeeting(ctx, t);
     await ctx.app.inject({

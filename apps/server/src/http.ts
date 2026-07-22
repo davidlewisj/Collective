@@ -23,7 +23,7 @@ import {
 import { AuditLog } from "./audit.js";
 import { correct } from "./attribution.js";
 import { can, canReadAudit, canSeeRecord, isAdmin, readableLayers } from "./rbac.js";
-import { consentSatisfied, missingConsent } from "./policy.js";
+import { consentSatisfied, missingConsent, voiceVendorAllowed } from "./policy.js";
 import {
   LiveHub,
   PipelineDeps,
@@ -38,6 +38,7 @@ import { MsGraph } from "./msgraph.js";
 import { OAUTH_SCOPES, OAuthProvider } from "./oauth.js";
 import { webOrigin as resolveWebOrigin } from "./config.js";
 import { Transcriber } from "./adapters/transcriber.js";
+import { MockVoiceEngine, VoiceEngine } from "./adapters/voice.js";
 import { AudioStore, MemoryAudioStore } from "./persist.js";
 import { IcsFetcher, currentCalendarEvent, httpIcsFetcher } from "./calendar.js";
 import { StreamingRelay, UpstreamFactory } from "./relay.js";
@@ -47,6 +48,8 @@ export interface AppDeps {
   db: Db;
   audit: AuditLog;
   transcriber: Transcriber;
+  /** Voice-recognition engine; defaults to the local mock. */
+  voiceEngine?: VoiceEngine;
   /** Defaults to in-memory; main.ts passes the disk store. */
   audioStore?: AudioStore;
   /** Live-caption vendor socket factory (relay.ts); null/absent = no live vendor captions. */
@@ -99,9 +102,11 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   const { db, audit } = deps;
   const hub = new LiveHub();
   const audioStore = deps.audioStore ?? new MemoryAudioStore();
+  const voiceEngine = deps.voiceEngine ?? new MockVoiceEngine();
   const relay = new StreamingRelay(db, hub, audit, deps.upstreamFactory ?? null);
   const pipeline: PipelineDeps = {
     ...deps,
+    voiceEngine,
     hub,
     audioFor: (id) => audioStore.read(id),
   };
@@ -456,6 +461,51 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     req.user.bubbleHue = bubbleHue;
     audit.emit({ actorUserId: req.user.id, action: "appearance.updated", detail: `bubbleHue=${bubbleHue}` });
     return { user: req.user };
+  });
+
+  /* --------------------------- voiceprint ------------------------------ */
+
+  const voiceprintStatus = (userId: string) => {
+    const v = db.voiceprints.get(userId);
+    return { enrolled: !!v, createdAt: v?.createdAt ?? null, vendor: v?.vendor ?? null };
+  };
+
+  app.get("/me/voiceprint", async (req) => voiceprintStatus(req.user.id));
+
+  app.post("/me/voiceprint", async (req, reply) => {
+    // Enroll the caller's own voice so future meetings can auto-attribute them
+    // (spec §2.3.3). Biometric data (§2.6.3): explicit consent is required, and
+    // a REAL voice vendor is gated on the `voice` BAA. The mock is local.
+    const body = z
+      .object({ audioBase64: z.string().min(1), consent: z.literal(true) })
+      .safeParse(req.body);
+    if (!body.success) {
+      return fail(reply, 400, "audioBase64 and explicit consent:true are required");
+    }
+    if (!voiceVendorAllowed(db, voiceEngine.name)) {
+      return fail(reply, 409, "voice enrollment needs the voice-vendor BAA on the registry");
+    }
+    const audio = Buffer.from(body.data.audioBase64, "base64");
+    const now = new Date().toISOString();
+    const voiceprint = {
+      userId: req.user.id,
+      entityId: req.user.entityId,
+      embedding: voiceEngine.enroll(req.user.id, audio),
+      vendor: voiceEngine.name,
+      createdAt: now,
+      consentAt: now,
+    };
+    db.voiceprints.set(req.user.id, voiceprint);
+    // Never log the embedding; just that enrollment happened, with consent.
+    audit.emit({ actorUserId: req.user.id, action: "voiceprint.enrolled", detail: `vendor=${voiceEngine.name}` });
+    return voiceprintStatus(req.user.id);
+  });
+
+  app.delete("/me/voiceprint", async (req) => {
+    // Right to delete biometric data (§2.6.3). Self-only.
+    const had = db.voiceprints.delete(req.user.id);
+    if (had) audit.emit({ actorUserId: req.user.id, action: "voiceprint.deleted" });
+    return voiceprintStatus(req.user.id);
   });
 
   /* ----------------------------- meetings ------------------------------ */
@@ -936,6 +986,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
         assemblyai: z.boolean(),
         claudeWorkspace: z.boolean(),
         microsoft: z.boolean(),
+        voice: z.boolean(),
       })
       .parse(req.body);
     audit.emit({ actorUserId: req.user.id, action: "admin.baa_registry_updated", detail: JSON.stringify(db.baa) });

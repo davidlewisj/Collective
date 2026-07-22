@@ -27,6 +27,7 @@ import {
   RetentionPolicy,
   ShareGrant,
   Utterance,
+  Voiceprint,
 } from "@collective/shared";
 import { User } from "@collective/shared";
 import {
@@ -96,7 +97,7 @@ export class DiskAudioStore implements AudioStore {
 /* ----------------------------- state snapshot --------------------------- */
 
 interface Snapshot {
-  version: 1 | 2 | 3 | 4;
+  version: 1 | 2 | 3 | 4 | 5;
   meetings: Meeting[];
   utterances: Array<[string, Utterance[]]>;
   notes: Array<[string, Note]>;
@@ -115,6 +116,8 @@ interface Snapshot {
   oauthClients?: OAuthClient[];
   oauthAccessTokens?: OAuthAccessToken[];
   oauthRefreshTokens?: OAuthRefreshToken[];
+  /** v5 additions: enrolled voiceprints (biometric; consent- + BAA-gated). */
+  voiceprints?: Voiceprint[];
 }
 
 export class StateSnapshotStore {
@@ -150,13 +153,15 @@ export class StateSnapshotStore {
     this.db.oauthClients = new Map((snap.oauthClients ?? []).map((c) => [c.clientId, c]));
     this.db.oauthAccessTokens = new Map((snap.oauthAccessTokens ?? []).map((t) => [t.token, t]));
     this.db.oauthRefreshTokens = new Map((snap.oauthRefreshTokens ?? []).map((t) => [t.token, t]));
+    // v5: enrolled voiceprints (older snapshots have none).
+    this.db.voiceprints = new Map((snap.voiceprints ?? []).map((v) => [v.userId, v]));
     return true;
   }
 
   /** Atomic write: temp file + rename, so a crash never truncates state. */
   save(): void {
     const snap: Snapshot = {
-      version: 4,
+      version: 5,
       meetings: [...this.db.meetings.values()],
       utterances: [...this.db.utterances.entries()],
       notes: [...this.db.notes.entries()],
@@ -172,6 +177,7 @@ export class StateSnapshotStore {
       oauthClients: [...this.db.oauthClients.values()],
       oauthAccessTokens: [...this.db.oauthAccessTokens.values()],
       oauthRefreshTokens: [...this.db.oauthRefreshTokens.values()],
+      voiceprints: [...this.db.voiceprints.values()],
     };
     writeFileSync(this.tmp, JSON.stringify(snap));
     renameSync(this.tmp, this.file);

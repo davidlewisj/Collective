@@ -1401,6 +1401,13 @@
   margin-top: var(--space-2);
 }
 
+.voice-enrolled {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
 .link-button {
   color: var(--c-juniper);
   text-decoration: underline;

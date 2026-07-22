@@ -31,7 +31,7 @@ describe("capture lifecycle", () => {
 
   it("runs the full pipeline: transcript, attribution, heuristic title", async () => {
     const ctx = makeCtx();
-    ctx.db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true };
+    ctx.db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true, voice: true };
     const t = await login(ctx, "dana@collective.dev");
     const id = await recordMeeting(ctx, t);
 
@@ -55,7 +55,7 @@ describe("capture lifecycle", () => {
 
   it("manual correction re-labels a whole voice and is audit-logged", async () => {
     const ctx = makeCtx();
-    ctx.db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true };
+    ctx.db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true, voice: true };
     const t = await login(ctx, "dana@collective.dev");
     const id = await recordMeeting(ctx, t);
     const tr = (await ctx.app.inject({ method: "GET", url: `/meetings/${id}/transcript`, headers: auth(t) })).json();

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { AuditLog } from "./audit.js";
 import { buildApp } from "./http.js";
 import { makeTranscriber } from "./adapters/transcriber.js";
+import { makeVoiceEngine } from "./adapters/voice.js";
 import {
   DiskAudioStore,
   StateSnapshotStore,
@@ -45,6 +46,7 @@ if (tamperedAt >= 0) {
 audit.onEvent = (event) => appendAuditEvent(dataDir, event);
 
 const transcriber = makeTranscriber();
+const voiceEngine = makeVoiceEngine();
 
 // Local demo convenience: with the mock transcriber nothing leaves the
 // machine, so the BAA registry is pre-marked satisfied to show the full
@@ -52,7 +54,7 @@ const transcriber = makeTranscriber();
 // gating fails safe — flip entries in /admin (or seed via COLLECTIVE_BAA)
 // only as executed BAAs are filed (CP-1/CP-4).
 if (transcriber.name === "mock") {
-  db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true };
+  db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true, voice: true };
   console.log("dev mode: mock transcriber — BAA registry pre-set for local demo");
 }
 
@@ -67,6 +69,7 @@ const app = buildApp({
   db,
   audit,
   transcriber,
+  voiceEngine,
   audioStore,
   upstreamFactory,
   graph,

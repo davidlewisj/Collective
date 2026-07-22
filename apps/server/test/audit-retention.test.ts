@@ -14,7 +14,7 @@ describe("audit log (spec §2.6.1, §3.3)", () => {
 
   it("every content access emits an event; auditor can read, members cannot", async () => {
     const ctx = makeCtx();
-    ctx.db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true };
+    ctx.db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true, voice: true };
     const dana = await login(ctx, "dana@collective.dev");
     const id = await recordMeeting(ctx, dana);
     await ctx.app.inject({ method: "GET", url: `/meetings/${id}/transcript`, headers: auth(dana) });
@@ -37,7 +37,7 @@ describe("audit log (spec §2.6.1, §3.3)", () => {
 describe("retention & deletion (spec §2.6.4)", () => {
   it("audio purges at its clock, the record at its clock, and search visibility dies with it", async () => {
     const ctx = makeCtx();
-    ctx.db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true };
+    ctx.db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true, voice: true };
     const dana = await login(ctx, "dana@collective.dev");
     const id = await recordMeeting(ctx, dana);
     const DAY = 24 * 60 * 60 * 1000;
