@@ -33,7 +33,7 @@ Every content read is audit-logged server-side. All list/detail responses are AC
 | POST `/meetings/:id/shares` | `{layer, granteeUserId, permission}` → `{share}` | Owner only; audio layer requires admin policy |
 | DELETE `/shares/:shareId` | → `{ok}` | Revocation is immediate incl. search |
 | POST `/memos` | `{dataBase64}` → `{text}` | Voice memo via Sync path (≤120 s) |
-| GET `/search` | `?q=` → `{hits}` | `{meetingId, title, snippet, layer}`; ACL + revocation aware |
+| GET `/search` | `?q=` → `{hits}` | `{meetingId, title, snippet, layer, whenIso}`; ACL + revocation aware; `whenIso` lets results show the meeting date |
 | GET `/audit` | `?meetingId=&actor=` → `{events}` | `compliance_auditor`/`org_admin` only |
 | GET `/me/settings` · PUT same | `{calendarIcsUrl}` → `{settings}` | Per-user; ICS feed powers calendar naming on untitled captures |
 | GET `/me/calendar-preview` | → `{event}` or 404 | Settings "Test": what a capture started now would be named |

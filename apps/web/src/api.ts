@@ -453,6 +453,7 @@ export interface SearchHit {
   title: string;
   snippet: string;
   layer: ShareLayer | string;
+  whenIso: string;
 }
 
 export function search(q: string): Promise<SearchHit[]> {

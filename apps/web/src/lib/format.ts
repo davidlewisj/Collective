@@ -4,6 +4,16 @@ export function fmtTimeOfDay(iso: string): string {
   return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 }
 
+/** Short calendar date — "Jul 22", with the year when it isn't the current one. */
+export function fmtDateShort(iso: string, now = new Date()): string {
+  const d = new Date(iso);
+  const opts: Intl.DateTimeFormatOptions =
+    d.getFullYear() === now.getFullYear()
+      ? { month: "short", day: "numeric" }
+      : { month: "short", day: "numeric", year: "numeric" };
+  return d.toLocaleDateString("en-US", opts);
+}
+
 export function fmtDurationMs(ms: number): string {
   const totalMin = Math.max(1, Math.round(ms / 60000));
   if (totalMin < 60) return `${totalMin} min`;

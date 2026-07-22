@@ -4,7 +4,7 @@ import type { Meeting, ShareGrant } from "@collective/shared";
 import { listMeetings, search, type SearchHit } from "../api";
 import { useAuth } from "../auth";
 import { useUsers } from "../lib/useUsers";
-import { dateGroupLabel, fmtTimeOfDay, meetingDuration } from "../lib/format";
+import { dateGroupLabel, fmtDateShort, fmtTimeOfDay, meetingDuration } from "../lib/format";
 import { Avatar } from "../components/Avatar";
 import { StateBadge } from "../components/Badges";
 import { RecordButton } from "../components/RecordButton";
@@ -32,7 +32,7 @@ function MeetingRow({ meeting, index }: { meeting: Meeting; index: number }) {
         <div className="meeting-row-main">
           <span className="meeting-row-title">{meeting.title || "Untitled meeting"}</span>
           <span className="meeting-row-time mono">
-            {fmtTimeOfDay(when)}
+            {fmtDateShort(when)} · {fmtTimeOfDay(when)}
             {duration ? ` · ${duration}` : ""}
           </span>
         </div>
@@ -54,9 +54,9 @@ function MeetingRow({ meeting, index }: { meeting: Meeting; index: number }) {
 
 function SearchResults({ hits }: { hits: SearchHit[] }) {
   const groups = useMemo(() => {
-    const byMeeting = new Map<string, { title: string; items: SearchHit[] }>();
+    const byMeeting = new Map<string, { title: string; whenIso: string; items: SearchHit[] }>();
     for (const h of hits) {
-      const g = byMeeting.get(h.meetingId) ?? { title: h.title, items: [] };
+      const g = byMeeting.get(h.meetingId) ?? { title: h.title, whenIso: h.whenIso, items: [] };
       g.items.push(h);
       byMeeting.set(h.meetingId, g);
     }
@@ -68,8 +68,11 @@ function SearchResults({ hits }: { hits: SearchHit[] }) {
     <div className="search-results">
       {groups.map(([meetingId, g]) => (
         <section key={meetingId} className="search-group">
-          <Link to={`/m/${meetingId}`} className="search-group-title">
-            {g.title || "Untitled meeting"}
+          <Link to={`/m/${meetingId}`} className="search-group-head">
+            <span className="search-group-title">{g.title || "Untitled meeting"}</span>
+            <span className="search-group-when mono">
+              {fmtDateShort(g.whenIso)} · {fmtTimeOfDay(g.whenIso)}
+            </span>
           </Link>
           <ul>
             {g.items.map((h, i) => (
