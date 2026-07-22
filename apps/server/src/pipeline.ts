@@ -104,7 +104,7 @@ export async function runPostMeetingPipeline(deps: PipelineDeps, meeting: Meetin
 
     const attendeeCount = meeting.attendeeUserIds.length + 1;
     const raw = await deps.transcriber.transcribe(meeting, deps.audioFor(meeting.id), {
-      speakersExpected: Math.min(Math.max(attendeeCount, 2), 10),
+      maxSpeakers: Math.min(Math.max(attendeeCount, 2), 10),
     });
     audit.emit({
       actorUserId: actor.id,
