@@ -157,6 +157,32 @@ button:disabled {
   border-color: var(--c-juniper);
 }
 
+/* Icon + label buttons: keep the glyph and text on one optical line. */
+.icon-text-btn,
+.btn-record-start {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.icon-text-btn svg,
+.btn-record-start svg {
+  flex: none;
+}
+
+/* Section headings that lead with an accent icon. */
+.section-heading-icon {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.section-heading-icon svg {
+  color: var(--c-juniper);
+  flex: none;
+}
+
 input,
 select,
 textarea {

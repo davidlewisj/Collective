@@ -69,17 +69,52 @@
 .list-nav {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-2);
   font: var(--type-body-sm);
+}
+
+/* Nav / back links: icon + label, quiet until hovered. */
+.nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--c-sage);
+  text-decoration: none;
+  border-radius: var(--radius-control);
+  padding: var(--space-1) var(--space-2);
+  transition: color var(--motion-instant) var(--motion-ease-standard);
+}
+
+.nav-link:hover {
+  color: var(--c-juniper);
+  text-decoration: none;
+}
+
+.nav-link svg {
+  flex: none;
 }
 
 .list-user {
   color: var(--c-sage);
 }
 
+.list-search {
+  position: relative;
+}
+
+.list-search-icon {
+  position: absolute;
+  left: var(--space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--c-sage);
+  pointer-events: none;
+}
+
 .list-search input {
   width: 100%;
   min-height: var(--app-hit);
+  padding-left: calc(var(--space-5) + var(--space-3));
 }
 
 .list-group-label {
@@ -191,34 +226,116 @@
   color: var(--c-sage);
 }
 
-/* capture pill (persistent, bottom-right) */
+/* ---------------------- record button (fab + hero) ---------------------- */
 
-.capture-pill {
+.record-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--c-surface-raised);
+}
+
+/* Persistent "Record" FAB, bottom-right of the meeting list. */
+.capture-fab-wrap {
   position: fixed;
   right: var(--space-5);
   bottom: var(--space-5);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  background: var(--c-juniper);
-  color: var(--c-linen);
-  font: var(--type-title);
-  border-radius: var(--radius-pill);
-  padding: var(--space-3) var(--space-5);
-  min-height: var(--app-hit);
-  box-shadow: var(--elev-e2);
   z-index: 10;
 }
 
-.capture-pill:hover {
-  background: color-mix(in srgb, var(--c-juniper) 88%, var(--c-ink));
+.record-btn-fab {
+  gap: var(--space-3);
+  border-radius: var(--radius-pill);
+  padding: var(--space-2) var(--space-5) var(--space-2) var(--space-2);
+  box-shadow: var(--elev-e2);
+  transition:
+    box-shadow var(--motion-fast) var(--motion-ease-standard),
+    transform var(--motion-fast) var(--motion-ease-standard);
 }
 
-.capture-pill-dot {
+.record-btn-fab .record-core {
+  width: calc(var(--space-6) + var(--space-2)); /* 40px disc */
+  height: calc(var(--space-6) + var(--space-2));
+  border-radius: var(--radius-pill);
+  background: var(--c-state-recording);
+  transition: transform var(--motion-fast) var(--motion-ease-standard);
+}
+
+.record-btn-fab .record-halo {
+  display: none;
+}
+
+.record-btn-label {
+  font: var(--type-title);
+  color: var(--c-ink);
+}
+
+.record-btn-fab:hover {
+  box-shadow: var(--elev-e3);
+}
+
+.record-btn-fab:hover .record-core {
+  transform: scale(1.1);
+}
+
+/* In-capture hero control — core morphs circle → rounded square when live. */
+.record-btn-hero {
+  width: calc(var(--space-8) + var(--space-2)); /* 72px */
+  height: calc(var(--space-8) + var(--space-2));
+  border-radius: var(--radius-pill);
+  border: var(--app-ring) solid var(--c-mist);
+}
+
+.record-btn-hero .record-core {
+  width: calc(var(--space-6) - var(--space-1)); /* ~28px */
+  height: calc(var(--space-6) - var(--space-1));
+  border-radius: var(--radius-pill);
+  background: var(--c-state-recording);
+  transition:
+    border-radius var(--motion-base) var(--motion-ease-standard),
+    width var(--motion-base) var(--motion-ease-standard),
+    height var(--motion-base) var(--motion-ease-standard),
+    opacity var(--motion-base) var(--motion-ease-standard);
+}
+
+/* Recording: the core is a rounded square (it now *shows* the stop action). */
+.record-btn-hero.record-recording .record-core,
+.record-btn-hero.record-paused .record-core {
+  width: calc(var(--space-5) - var(--space-1)); /* ~20px */
+  height: calc(var(--space-5) - var(--space-1));
+  border-radius: var(--space-1);
+}
+
+.record-btn-hero.record-stopping .record-core {
   width: var(--space-2);
   height: var(--space-2);
+  opacity: 0.5;
+}
+
+/* Breathing halo while live; stilled on pause, absent when armed/stopping. */
+.record-halo {
+  position: absolute;
+  inset: 0;
   border-radius: var(--radius-pill);
-  background: currentColor;
+  border: var(--app-ring) solid color-mix(in srgb, var(--c-state-recording) 32%, transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.record-btn-hero.record-recording .record-halo {
+  opacity: 1;
+  animation: app-pulse var(--app-pulse-period) var(--motion-ease-standard) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .record-btn-hero.record-recording .record-halo {
+    animation: none;
+    opacity: 0.5;
+  }
+  .record-btn-hero .record-core {
+    transition: none;
+  }
 }
 
 /* ------------------------------ live capture ---------------------------- */
@@ -267,6 +384,9 @@
 }
 
 .consent-chip-ok {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   font: var(--type-caption);
   color: var(--c-state-success);
   background: color-mix(in srgb, var(--c-state-success) 12%, transparent);
@@ -326,6 +446,17 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
+}
+
+.capture-setup-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--space-7) + var(--space-1)); /* 52px */
+  height: calc(var(--space-7) + var(--space-1));
+  border-radius: var(--radius-pill);
+  color: var(--c-juniper);
+  background: color-mix(in srgb, var(--c-juniper) 12%, transparent);
 }
 
 .capture-setup-headline {
@@ -407,6 +538,10 @@
 }
 
 .consent-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
   border: var(--app-hairline) solid var(--c-mist);
   min-height: var(--app-hit);
   flex: 1;
@@ -551,38 +686,61 @@
   }
 }
 
-/* controls */
+/* control dock — a floating pill of icon controls around the hero stop */
 
-.capture-controls {
+.capture-dock {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  padding: var(--space-3) 0;
-  border-top: var(--app-hairline) solid var(--c-mist);
+  justify-content: center;
+  gap: var(--space-4);
+  align-self: center;
+  margin: var(--space-3) 0;
+  padding: var(--space-2) var(--space-4);
+  background: var(--c-surface-raised);
+  border: var(--app-hairline) solid var(--c-mist);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--elev-e2);
   flex: none;
 }
 
-.btn-stop {
-  background: var(--c-state-recording);
-}
-
-.btn-stop:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--c-state-recording) 88%, var(--c-ink));
-}
-
-.btn-objection {
+.dock-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: calc(var(--space-8) - var(--space-2));
+  padding: var(--space-1) var(--space-2);
+  background: transparent;
+  border: none;
   color: var(--c-sage);
-  font: var(--type-body-sm);
+  font: var(--type-caption);
+  border-radius: var(--radius-control);
+  transition: color var(--motion-instant) var(--motion-ease-standard);
 }
 
-.btn-objection.armed {
+.dock-btn:hover:not(:disabled) {
+  color: var(--c-ink);
+  background: transparent;
+}
+
+.dock-hero {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.dock-hero-label {
+  font: var(--type-caption);
+  color: var(--c-sage);
+}
+
+.dock-btn-danger.armed {
   color: var(--c-state-error);
-  border: var(--app-hairline) solid var(--c-state-error);
 }
 
 .notes-toggle {
-  margin-left: auto;
+  /* sits within the dock like any other control now */
 }
 
 .capture-stopping {

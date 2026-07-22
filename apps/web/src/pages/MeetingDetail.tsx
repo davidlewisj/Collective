@@ -17,6 +17,15 @@ import { Avatar, hueForUser } from "../components/Avatar";
 import { NotesEditor } from "../components/NotesEditor";
 import { ShareSheet } from "../components/ShareSheet";
 import { useNote } from "../lib/useNote";
+import {
+  IconChevronLeft,
+  IconCopy,
+  IconLock,
+  IconPause,
+  IconPlay,
+  IconShare,
+  IconSparkle,
+} from "../components/icons";
 
 type MeetingMaybeShared = Meeting & { shares?: ShareGrant[] };
 
@@ -87,7 +96,10 @@ function AskClaudeCard({ meeting }: { meeting: Meeting }) {
 
   return (
     <section className="detail-section">
-      <h2 className="section-heading">Summary &amp; action items</h2>
+      <h2 className="section-heading section-heading-icon">
+        <IconSparkle size={20} />
+        Summary &amp; action items
+      </h2>
       <p className="detail-muted">
         Ask Claude — it reads this meeting's transcript and your notes through your Collective connector
         and answers with exactly what you need. Set it up once in Settings → Connect Claude.
@@ -96,11 +108,12 @@ function AskClaudeCard({ meeting }: { meeting: Meeting }) {
         <p className="ask-claude-prompt mono">{prompt}</p>
         <button
           type="button"
-          className="btn-quiet"
+          className="btn-quiet icon-text-btn"
           onClick={() => {
             void navigator.clipboard.writeText(prompt).then(() => setCopied(true));
           }}
         >
+          <IconCopy size={18} />
           {copied ? "Copied" : "Copy prompt"}
         </button>
       </div>
@@ -429,8 +442,9 @@ function AudioPlayer({ meetingId, durationMs }: { meetingId: string; durationMs:
   const pct = totalMs > 0 ? Math.min((positionMs / totalMs) * 100, 100) : 0;
   return (
     <div className="audio-bar">
-      <button type="button" className="btn-mini" onClick={() => void toggle()} disabled={loading}>
-        {loading ? "Loading…" : playing ? "Pause audio" : "Play audio"}
+      <button type="button" className="btn-mini icon-text-btn" onClick={() => void toggle()} disabled={loading}>
+        {playing ? <IconPause size={18} /> : <IconPlay size={18} />}
+        {loading ? "Loading…" : playing ? "Pause" : "Play"}
       </button>
       <span
         className="audio-track audio-track-seek"
@@ -530,8 +544,9 @@ export function MeetingDetailPage() {
   if (notFound)
     return (
       <main className="detail-page">
-        <Link to="/" className="btn-quiet">
-          ← Meetings
+        <Link to="/" className="btn-quiet nav-link">
+          <IconChevronLeft size={20} />
+          <span>Meetings</span>
         </Link>
         <p className="detail-muted" role="alert">
           This meeting doesn't exist or you don't have access to it.
@@ -568,16 +583,18 @@ export function MeetingDetailPage() {
   return (
     <main className="detail-page">
       <header className="detail-topbar">
-        <Link to="/" className="btn-quiet">
-          ← Meetings
+        <Link to="/" className="btn-quiet nav-link">
+          <IconChevronLeft size={20} />
+          <span>Meetings</span>
         </Link>
         <div className="detail-chips">
           {processing && <span className="state-badge state-badge-processing">Processing</span>}
           <button
             type="button"
-            className={`share-chip${sharedPeople > 0 ? " share-chip-shared" : ""}`}
+            className={`share-chip icon-text-btn${sharedPeople > 0 ? " share-chip-shared" : ""}`}
             onClick={() => setSheetOpen(true)}
           >
+            {sharedPeople > 0 ? <IconShare size={16} /> : <IconLock size={16} />}
             {sharedPeople > 0
               ? `Shared · ${sharedPeople} ${sharedPeople === 1 ? "person" : "people"}`
               : "Private · Only you"}
