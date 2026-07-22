@@ -333,6 +333,27 @@ export function revokeConnectorToken(): Promise<void> {
   return api<{ ok: boolean }>("/me/connector-token", { method: "DELETE" }).then(() => undefined);
 }
 
+/* ---------------------------- voiceprint ------------------------------- */
+
+export interface VoiceprintStatus {
+  enrolled: boolean;
+  createdAt: string | null;
+  vendor: string | null;
+}
+
+export function getVoiceprint(): Promise<VoiceprintStatus> {
+  return api<VoiceprintStatus>("/me/voiceprint");
+}
+
+/** Enroll the caller's own voice (biometric; requires explicit consent). */
+export function enrollVoiceprint(audioBase64: string): Promise<VoiceprintStatus> {
+  return api<VoiceprintStatus>("/me/voiceprint", { method: "POST", body: { audioBase64, consent: true } });
+}
+
+export function deleteVoiceprint(): Promise<VoiceprintStatus> {
+  return api<VoiceprintStatus>("/me/voiceprint", { method: "DELETE" });
+}
+
 /* --------------------- MCP OAuth (claude.ai connector) ----------------- */
 
 export interface OAuthAuthorizeInfo {

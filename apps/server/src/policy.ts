@@ -34,3 +34,21 @@ export function transcriptionEgressAllowed(db: Db, meeting: Meeting): boolean {
 export function mcpEgressAllowed(db: Db, meeting: Meeting): boolean {
   return !phiEffective(db, meeting) || db.baa.claudeWorkspace;
 }
+
+/**
+ * May a voice sample be sent to the voice-embedding vendor? Biometric data
+ * (spec §2.6.3): a real vendor needs the `voice` BAA. The local mock engine
+ * never leaves the box, so it isn't gated (mirrors the transcription rule).
+ */
+export function voiceVendorAllowed(db: Db, engineName: string): boolean {
+  return engineName === "mock" || db.baa.voice;
+}
+
+/**
+ * May this meeting's audio be matched against enrolled voiceprints? The mock
+ * engine is local; a real engine sends audio to the voice vendor, so it needs
+ * the `voice` BAA regardless of the PHI flag (the sample itself is biometric).
+ */
+export function voiceMatchAllowed(db: Db, _meeting: Meeting, engineName: string): boolean {
+  return engineName === "mock" || db.baa.voice;
+}

@@ -18,7 +18,7 @@ describe("§6.6 — per-meeting PHI flag with BAA-aware egress gating", () => {
 
   it("MCP excludes PHI-flagged meetings without the Claude workspace BAA and serves them once it's on file", async () => {
     const ctx = makeCtx();
-    ctx.db.baa = { assemblyai: true, claudeWorkspace: false, microsoft: true };
+    ctx.db.baa = { assemblyai: true, claudeWorkspace: false, microsoft: true, voice: false };
     const t = await login(ctx, "dana@collective.dev");
     const id = await recordMeeting(ctx, t);
     const dana = ctx.db.users.get("u_dana")!;
@@ -42,7 +42,7 @@ describe("§6.6 — per-meeting PHI flag with BAA-aware egress gating", () => {
 
   it("MCP results are ACL-filtered per caller — no cross-user leakage", async () => {
     const ctx = makeCtx();
-    ctx.db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true };
+    ctx.db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true, voice: true };
     const t = await login(ctx, "dana@collective.dev");
     const id = await recordMeeting(ctx, t, { attendees: [] });
     await ctx.app.inject({ method: "PUT", url: `/meetings/${id}/phi-flag`, headers: auth(t), payload: { flagged: false } });

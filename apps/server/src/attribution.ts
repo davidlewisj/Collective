@@ -2,12 +2,13 @@
  * Attribution engine v1 (design-spec §2.3.1; backlog AT-1..6).
  * Evidence sources implemented in this slice, in descending authority:
  *   1. channel identity — the mic channel is the signed-in user (virtual desktop)
- *   2. roster name cues — "This is Priya", "Thanks, Omar", "Priya, can you…"
- *   3. manual correction (scope: line | voice), which always wins
- * Voice profiles (§2.3.3) and Teams/Graph (§2.3.2) are Phase 1.5/2 sources and
- * plug into the same hypothesis model.
+ *   2. voice profiles (§2.3.3) — a cluster matched to an enrolled voiceprint
+ *   3. roster name cues — "This is Priya", "Thanks, Omar", "Priya, can you…"
+ *   4. manual correction (scope: line | voice), which always wins
+ * Teams/Graph (§2.3.2) is a Phase 2 source and plugs into the same model.
  */
 import { AttributionEvidence, Meeting, User, Utterance } from "@collective/shared";
+import { VoiceMatch } from "./adapters/voice.js";
 import { Db } from "./store.js";
 
 const MARGIN = 0.15;
@@ -45,7 +46,12 @@ function nameCues(text: string, attendees: User[]): Hypothesis[] {
   return hits;
 }
 
-export function attribute(db: Db, meeting: Meeting, utterances: Utterance[]): Utterance[] {
+export function attribute(
+  db: Db,
+  meeting: Meeting,
+  utterances: Utterance[],
+  voiceMatches: VoiceMatch[] = [],
+): Utterance[] {
   const attendees = [meeting.ownerUserId, ...meeting.attendeeUserIds]
     .map((id) => db.users.get(id))
     .filter((u): u is User => !!u);
@@ -57,6 +63,18 @@ export function attribute(db: Db, meeting: Meeting, utterances: Utterance[]): Ut
     arr.push(h);
     byCluster.set(cluster, arr);
   };
+
+  // Voice-profile hypotheses: a diarization cluster matched to an enrolled
+  // voiceprint. Authoritative below the mic channel, above spoken name cues.
+  for (const m of voiceMatches) {
+    if (!db.users.has(m.userId)) continue;
+    push(m.cluster, {
+      userId: m.userId,
+      score: m.score,
+      source: "voice_profile",
+      detail: `voice match for ${db.users.get(m.userId)?.displayName ?? m.userId}`,
+    });
+  }
 
   for (const u of utterances) {
     // 1. Channel identity: the capture engine tags the mic channel's cluster

@@ -74,7 +74,7 @@ describe("transcription vendor gating (§6.6 / CP-1 invariant)", () => {
     expect(ctx.audit.query({ meetingId: id }).some((e) => e.action === "transcription.skipped_phi_gate")).toBe(true);
 
     // BAA recorded in the registry → reprocess → vendor runs, transcript lands.
-    ctx.db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true };
+    ctx.db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true, voice: true };
     await ctx.app.inject({ method: "POST", url: `/meetings/${id}/reprocess`, headers: auth(t) });
     for (let i = 0; i < 100; i++) {
       const m = await ctx.app.inject({ method: "GET", url: `/meetings/${id}`, headers: auth(t) });
@@ -123,7 +123,7 @@ describe("transcription vendor gating (§6.6 / CP-1 invariant)", () => {
 
   it("reprocess is owner-only and requires preserved audio", async () => {
     const ctx = makeCtx();
-    ctx.db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true };
+    ctx.db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true, voice: true };
     const dana = await login(ctx, "dana@collective.dev");
     const id = await captureToReady(ctx, dana);
     const omar = await login(ctx, "omar@collective.dev");

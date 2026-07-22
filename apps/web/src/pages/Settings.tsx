@@ -10,6 +10,8 @@ import type {
 import {
   createOAuthClient,
   deleteOAuthClient,
+  deleteVoiceprint,
+  enrollVoiceprint,
   getAudit,
   getBaaRegistry,
   getCalendarPreview,
@@ -17,6 +19,7 @@ import {
   getConsentPolicy,
   getRetention,
   getSettings,
+  getVoiceprint,
   listOAuthClients,
   mintConnectorToken,
   putAppearance,
@@ -26,15 +29,18 @@ import {
   putSettings,
   revokeConnectorToken,
   type OAuthClient,
+  type VoiceprintStatus,
 } from "../api";
 import { useAuth } from "../auth";
 import { useUsers } from "../lib/useUsers";
 import { hueVar } from "../components/Avatar";
+import { blobToBase64 } from "../lib/audio";
 import { getStoredTheme, setTheme, type ThemePref } from "../lib/theme";
 import {
   IconCalendar,
   IconCheck,
   IconChevronLeft,
+  IconMic,
   IconShield,
   IconSliders,
   IconSparkle,
@@ -255,6 +261,109 @@ function AppearanceCard() {
   );
 }
 
+function VoiceCard() {
+  const [status, setStatus] = useState<VoiceprintStatus | null>(null);
+  const [phase, setPhase] = useState<"idle" | "recording" | "enrolling" | "error">("idle");
+  const [consent, setConsent] = useState(false);
+
+  useEffect(() => {
+    getVoiceprint().then(setStatus).catch(() => {});
+  }, []);
+
+  const record = async () => {
+    setPhase("recording");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find(
+        (t) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(t),
+      );
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      const chunks: Blob[] = [];
+      rec.ondataavailable = (e) => {
+        if (e.data.size) chunks.push(e.data);
+      };
+      rec.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        setPhase("enrolling");
+        try {
+          const b64 = await blobToBase64(new Blob(chunks, { type: rec.mimeType }));
+          setStatus(await enrollVoiceprint(b64));
+          setPhase("idle");
+        } catch {
+          setPhase("error");
+        }
+      };
+      rec.start();
+      window.setTimeout(() => {
+        if (rec.state !== "inactive") rec.stop();
+      }, 4000);
+    } catch {
+      setPhase("error");
+    }
+  };
+
+  const remove = async () => {
+    try {
+      setStatus(await deleteVoiceprint());
+      setConsent(false);
+    } catch {
+      /* leave as-is */
+    }
+  };
+
+  return (
+    <section id="voice" className="set-card">
+      <h2 className="section-heading section-heading-icon">
+        <IconMic size={20} />
+        Voice recognition
+      </h2>
+      <p className="set-hint">
+        Enroll your voice once and Collective can label your turns automatically in future meetings — no need to
+        tag yourself each time. Your voiceprint is biometric data: it's used only for speaker attribution, never
+        shared, and you can delete it anytime.
+      </p>
+      {status?.enrolled ? (
+        <div className="voice-enrolled">
+          <span className="consent-chip consent-chip-ok">
+            <IconCheck size={16} />
+            Enrolled{status.createdAt ? ` · ${new Date(status.createdAt).toLocaleDateString("en-US")}` : ""}
+          </span>
+          <button type="button" className="btn-quiet" onClick={() => void remove()}>
+            Remove my voiceprint
+          </button>
+        </div>
+      ) : (
+        <>
+          <label className="toggle-row">
+            <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+            <span>I consent to Collective creating a voiceprint of my voice for speaker recognition.</span>
+          </label>
+          <div className="admin-card-foot">
+            <button
+              type="button"
+              className="btn icon-text-btn"
+              disabled={!consent || phase === "recording" || phase === "enrolling"}
+              onClick={() => void record()}
+            >
+              <IconMic size={18} />
+              {phase === "recording"
+                ? "Listening… speak now"
+                : phase === "enrolling"
+                  ? "Saving…"
+                  : "Record a 4-second sample"}
+            </button>
+          </div>
+          {phase === "error" && (
+            <p className="field-error" role="alert">
+              Couldn't capture a sample — allow microphone access and try again.
+            </p>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 function CalendarCard() {
   const [url, setUrl] = useState("");
   const [savedUrl, setSavedUrl] = useState("");
@@ -440,6 +549,7 @@ const BAA_LABELS: Array<{ key: keyof BaaRegistry; label: string; hint: string }>
   { key: "assemblyai", label: "AssemblyAI", hint: "Transcription" },
   { key: "claudeWorkspace", label: "Claude workspace", hint: "Claude connector (summaries & Q&A)" },
   { key: "microsoft", label: "Microsoft", hint: "Sign-in & calendar" },
+  { key: "voice", label: "Voice vendor", hint: "Voiceprint recognition" },
 ];
 
 const MECHANISMS: Array<{ key: ConsentMechanism; label: string }> = [
@@ -864,6 +974,7 @@ export function SettingsPage() {
   const anchors: Anchor[] = [
     { id: "profile", label: "Profile" },
     { id: "appearance", label: "Appearance" },
+    { id: "voice", label: "Voice" },
     { id: "calendar", label: "Calendar" },
     { id: "claude", label: "Connect Claude" },
     ...(showWorkspace ? [{ id: "workspace", label: "Workspace" } as Anchor] : []),
@@ -926,6 +1037,7 @@ export function SettingsPage() {
           <div className="settings-col" ref={colRef}>
             <ProfileCard />
             <AppearanceCard />
+            <VoiceCard />
             <CalendarCard />
             <ConnectClaudeCard />
 

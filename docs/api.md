@@ -38,7 +38,8 @@ Every content read is audit-logged server-side. All list/detail responses are AC
 | GET `/me/settings` · PUT same | `{calendarIcsUrl}` → `{settings}` | Per-user; ICS feed powers calendar naming on untitled captures |
 | GET `/me/calendar-preview` | → `{event}` or 404 | Settings "Test": what a capture started now would be named |
 | GET/POST/DELETE `/me/connector-token` | POST → `{token}` (shown once, `mcp_…`) | Long-lived Claude connector token; authenticates **`/mcp` only**; mint replaces, delete revokes |
-| GET `/admin/baa-registry` · PUT same | body `{assemblyai, claudeWorkspace, microsoft}` → response `{baa}` | org_admin; drives §6.6 gating |
+| GET/POST/DELETE `/me/voiceprint` | POST `{audioBase64, consent:true}` → `{enrolled, createdAt, vendor}` | Self-only voice enrollment (spec §2.3.3). Biometric: explicit consent required; a real vendor is gated on the `voice` BAA; embedding never logged. DELETE removes it. Enables `voice_profile` attribution |
+| GET `/admin/baa-registry` · PUT same | body `{assemblyai, claudeWorkspace, microsoft, voice}` → response `{baa}` | org_admin; drives §6.6 + voiceprint egress gating |
 | GET `/admin/consent-policy` · PUT same | body `{requiredMechanisms, phiFailSafe}` → response `{policy}` | org_admin |
 | GET `/admin/retention` · PUT same | body `{audioDays, transcriptDays, auditDays}` → response `{retention}` | org_admin |
 

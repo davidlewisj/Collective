@@ -121,7 +121,7 @@ describe("Claude connector tokens", () => {
   it("mints a token that works on /mcp only, and revocation kills it", async () => {
     const db = createDb();
     seedUsers(db);
-    db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true };
+    db.baa = { assemblyai: true, claudeWorkspace: true, microsoft: true, voice: true };
     const app = buildApp({ db, audit: new AuditLog(), transcriber: new MockTranscriber() });
     const ctx = { app, db, audit: new AuditLog() };
     const t = await login(ctx, "dana@collective.dev");

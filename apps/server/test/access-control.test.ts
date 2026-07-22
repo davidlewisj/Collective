@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { auth, login, makeCtx, recordMeeting } from "./helpers.js";
 
-const ALL_BAA = { assemblyai: true, claudeWorkspace: true, microsoft: true };
+const ALL_BAA = { assemblyai: true, claudeWorkspace: true, microsoft: true, voice: true };
 
 describe("RBAC — deny by default (spec §2.6.1, §2.7.2)", () => {
   it("attendees see the record exists but no content layers until shared", async () => {

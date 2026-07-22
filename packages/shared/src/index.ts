@@ -156,6 +156,24 @@ export interface BaaRegistry {
   /** HIPAA-ready Claude workspace BAA — gates PHI-flagged meetings on the MCP/connector surface (spec §6.6). */
   claudeWorkspace: boolean;
   microsoft: boolean;
+  /** Voice-embedding vendor BAA — gates real voiceprint enrollment/matching (biometric data, spec §2.6.3). */
+  voice: boolean;
+}
+
+/**
+ * A person's enrolled voice signature (spec §2.3.3/§2.6.3). Biometric data:
+ * consent-gated at enrollment, and — for a real voice vendor — egress-gated on
+ * the `voice` BAA. The stored `embedding` is an opaque vector, never raw audio.
+ */
+export interface Voiceprint {
+  userId: string;
+  entityId: string;
+  embedding: number[];
+  /** Engine that produced it ("mock" until a real voice vendor + BAA). */
+  vendor: string;
+  createdAt: string;
+  /** When the person gave biometric-enrollment consent. */
+  consentAt: string;
 }
 
 export interface ConsentPolicy {

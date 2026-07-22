@@ -12,7 +12,8 @@ import { Meeting, User, Utterance } from "@collective/shared";
 import { applyLiveAssignments, attribute } from "./attribution.js";
 import { AuditLog } from "./audit.js";
 import { MockTranscriber, Transcriber } from "./adapters/transcriber.js";
-import { transcriptionEgressAllowed } from "./policy.js";
+import { VoiceEngine, VoiceMatch } from "./adapters/voice.js";
+import { transcriptionEgressAllowed, voiceMatchAllowed } from "./policy.js";
 import { Db, recordLiveTurn } from "./store.js";
 
 type SseSink = (event: string, data: unknown) => void;
@@ -68,6 +69,7 @@ export interface PipelineDeps {
   db: Db;
   audit: AuditLog;
   transcriber: Transcriber;
+  voiceEngine: VoiceEngine;
   hub: LiveHub;
   /** Raw audio for the meeting, assembled from chunks (dev slice: in memory). */
   audioFor: (meetingId: string) => Buffer;
@@ -111,7 +113,24 @@ export async function runPostMeetingPipeline(deps: PipelineDeps, meeting: Meetin
       detail: `${deps.transcriber.name}: ${raw.length} utterances`,
     });
 
-    let attributed = attribute(db, meeting, raw);
+    // Voice-profile matching (spec §2.3.3): match diarization clusters to
+    // enrolled voiceprints. Local mock is ungated; a real vendor needs the
+    // `voice` BAA (biometric egress). Enrolled people consented at enrollment.
+    let voiceMatches: VoiceMatch[] = [];
+    const enrolled = [...db.voiceprints.values()].map((v) => ({ userId: v.userId, embedding: v.embedding }));
+    if (enrolled.length > 0 && voiceMatchAllowed(db, meeting, deps.voiceEngine.name)) {
+      voiceMatches = deps.voiceEngine.match(raw, enrolled);
+      if (voiceMatches.length > 0) {
+        audit.emit({
+          actorUserId: actor.id,
+          action: "attribution.voice_matched",
+          meetingId: meeting.id,
+          detail: voiceMatches.map((m) => `${m.cluster}→${m.userId}`).join(", "),
+        });
+      }
+    }
+
+    let attributed = attribute(db, meeting, raw, voiceMatches);
 
     // Names assigned live during capture are manual evidence — they always
     // win. Live and batch diarization are separate runs, so clusters are
