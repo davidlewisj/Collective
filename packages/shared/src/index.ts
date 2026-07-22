@@ -111,6 +111,23 @@ export interface Meeting {
    * Summaries themselves are connector-territory (D10): users ask Claude.
    */
   notice?: string;
+  /** Facilitator-dropped moment markers; render as dividers in the transcript. */
+  flags?: MeetingFlag[];
+}
+
+/**
+ * A moment the facilitator flagged during capture — a timeline marker, not
+ * content. Renders as a labeled divider across the transcript at `atMs`.
+ */
+export interface MeetingFlag {
+  id: string;
+  /** Milliseconds from meeting start when the flag was dropped. */
+  atMs: number;
+  /** Optional short label; the UI shows "Flag" when absent. */
+  label?: string;
+  byUserId: string;
+  /** ISO wall-clock time, for audit and detail display. */
+  at: string;
 }
 
 export interface Note {

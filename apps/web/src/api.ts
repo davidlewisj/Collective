@@ -8,6 +8,7 @@ import type {
   ConsentMechanism,
   ConsentPolicy,
   Meeting,
+  MeetingFlag,
   MeetingMode,
   Note,
   RetentionPolicy,
@@ -236,6 +237,14 @@ export function postObjection(id: string): Promise<Meeting> {
   return api<{ meeting: Meeting }>(`/meetings/${id}/objection`, { method: "POST" }).then(
     (r) => r.meeting,
   );
+}
+
+/** Flag the current moment (ms from meeting start) — renders as a transcript divider. */
+export function postFlag(id: string, atMs: number, label?: string): Promise<MeetingFlag> {
+  return api<{ flag: MeetingFlag }>(`/meetings/${id}/flags`, {
+    method: "POST",
+    body: { atMs, ...(label ? { label } : {}) },
+  }).then((r) => r.flag);
 }
 
 export function getTranscript(id: string): Promise<Utterance[]> {
