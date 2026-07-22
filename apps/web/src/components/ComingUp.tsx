@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getUpcomingEvents, type UpcomingEvent } from "../api";
-import { InPersonGlyph, PROVIDER_LABEL, ProviderLogo } from "./providerLogos";
+import { PROVIDER_LABEL, ProviderLogo } from "./providerLogos";
 
 /** "1:00 – 2:00 PM" — drops the meridiem from the start when it matches the end. */
 function timeRange(startMs: number, endMs: number): string {
@@ -110,7 +110,6 @@ export function ComingUp() {
                           </button>
                         ) : (
                           <button type="button" className="comingup-cta comingup-start" onClick={() => start(ev)}>
-                            <InPersonGlyph size={16} />
                             Start now
                           </button>
                         ))}
