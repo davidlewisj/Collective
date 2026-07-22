@@ -20,6 +20,7 @@ Every content read is audit-logged server-side. All list/detail responses are AC
 | POST `/meetings/:id/chunks` | `{seq, dataBase64}` → `{received}` | Audio chunk during recording |
 | GET `/meetings/:id/live` | Server-Sent Events | `caption` events (live turns with cluster labels), `status` events (incl. `liveCaptions` flag), `speakers` events (cluster→name map from in-session naming) |
 | POST `/meetings/:id/live/speaker` | `{cluster, userId?\|guestLabel?}` → `{speakers}` | Owner, while recording: name a live voice in real time; carries into the final transcript as manual attribution (live↔batch clusters matched by text overlap) |
+| POST `/meetings/:id/flags` | `{atMs, label?}` → `{flag, meeting}` | Owner, while recording: flag a moment (ms from start); renders as a labeled divider in the live + finished transcript. Audited `meeting.flagged` |
 | WS `/meetings/:id/stream` | `?token=&rate=16000`; binary PCM16 frames up | Live-caption streaming relay → AssemblyAI v3 (owner only, while recording; §6.6-gated; token as query param because browser WS can't set headers) |
 | POST `/meetings/:id/stop` | → `{meeting}` | → `processing`; pipeline: transcribe → attribute (incl. live-assigned names); → `ready`. No summary job — summaries are asked of Claude via the connector (D10) |
 | POST `/meetings/:id/objection` | → `{meeting}` | Stops + deletes audio, keeps notes (spec §2.6.2 objection path) |

@@ -8,6 +8,7 @@ import {
   patchMeetingTitle,
   postChunk,
   postConsent,
+  postFlag,
   postObjection,
   startMeeting,
   stopMeeting,
@@ -23,6 +24,7 @@ import { useAuth } from "../auth";
 import { buildSpeakerStyles, identityKey } from "../lib/speakerColors";
 import { Avatar } from "../components/Avatar";
 import { NotesEditor } from "../components/NotesEditor";
+import { FlagDivider } from "../components/FlagDivider";
 import { Waveform } from "../components/Waveform";
 import { RecordButton } from "../components/RecordButton";
 import {
@@ -44,6 +46,14 @@ interface CaptionLine {
   cluster: string;
   text: string;
   interim: boolean;
+}
+
+/** A dropped flag, positioned in the live view by the line count at flag time. */
+interface LiveFlag {
+  id: string;
+  atMs: number;
+  afterCount: number;
+  label?: string;
 }
 
 const ANNOUNCEMENT_SCRIPT = "Quick note: I'm recording this meeting for notes — any objection?";
@@ -131,12 +141,14 @@ function LiveTranscript({
   liveCaptions,
   speakers,
   ownerUserId,
+  flags,
   onNameSpeaker,
 }: {
   lines: CaptionLine[];
   liveCaptions: boolean;
   speakers: Record<string, { name: string; userId: string | null }>;
   ownerUserId: string;
+  flags: LiveFlag[];
   onNameSpeaker: (cluster: string, target: { userId?: string; guestLabel?: string }) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -221,50 +233,76 @@ function LiveTranscript({
               : "Recording is on. The transcript arrives shortly after you stop — live captions are coming in a future update."}
           </p>
         )}
-        {blocks.map((b, i) => {
-          const named = speakers[b.cluster]?.name;
-          const st = styles.get(identityKey({ cluster: b.cluster, ...(speakers[b.cluster]?.userId ? { speakerUserId: speakers[b.cluster]!.userId! } : named ? { guestLabel: named } : {}) })) ?? {
-            side: "left" as const,
-            kind: "unknown" as const,
+        {(() => {
+          // Interleave flag dividers by how many lines existed when each was
+          // dropped, so a flag lands right where the facilitator marked it.
+          const sorted = [...flags].sort((a, b) => a.afterCount - b.afterCount || a.atMs - b.atMs);
+          const items: React.ReactNode[] = [];
+          let cursor = 0;
+          let fi = 0;
+          const emitFlagsUpTo = (n: number) => {
+            while (fi < sorted.length && sorted[fi]!.afterCount <= n) {
+              const f = sorted[fi]!;
+              items.push(<FlagDivider key={`flag-${f.id}`} atMs={f.atMs} label={f.label} />);
+              fi++;
+            }
           };
-          const popKey = `${b.cluster}-${i}`;
-          return (
-            <div
-              className={`bubble-group bubble-${st.side} bubble-kind-${st.kind}`}
-              key={popKey}
-              style={st.colorVar ? ({ "--bubble": st.colorVar } as React.CSSProperties) : undefined}
-            >
-              <span className="bubble-head live-block-speaker">
-                <button
-                  type="button"
-                  className="bubble-speaker"
-                  title="Tap to name this voice"
-                  onClick={() => setNamingCluster(namingCluster === popKey ? null : popKey)}
-                >
-                  <span className="bubble-name">{named ?? `Speaker ${clusterOrder.indexOf(b.cluster) + 1}`}</span>
-                </button>
-                {namingCluster === popKey && (
-                  <LiveSpeakerPopover
-                    users={users}
-                    currentName={named}
-                    onPick={(target) => {
-                      setNamingCluster(null);
-                      onNameSpeaker(b.cluster, target);
-                    }}
-                    onClose={() => setNamingCluster(null)}
-                  />
-                )}
-              </span>
-              <div className="bubble-stack">
-                {b.lines.map((l) => (
-                  <p key={l.key} className={`bubble${l.interim ? " bubble-interim" : ""}`}>
-                    {l.text}
-                  </p>
-                ))}
-              </div>
-            </div>
-          );
-        })}
+          emitFlagsUpTo(0);
+          blocks.forEach((b, i) => {
+            const named = speakers[b.cluster]?.name;
+            const st =
+              styles.get(
+                identityKey({
+                  cluster: b.cluster,
+                  ...(speakers[b.cluster]?.userId
+                    ? { speakerUserId: speakers[b.cluster]!.userId! }
+                    : named
+                      ? { guestLabel: named }
+                      : {}),
+                }),
+              ) ?? { side: "left" as const, kind: "unknown" as const };
+            const popKey = `${b.cluster}-${i}`;
+            items.push(
+              <div
+                className={`bubble-group bubble-${st.side} bubble-kind-${st.kind}`}
+                key={popKey}
+                style={st.colorVar ? ({ "--bubble": st.colorVar } as React.CSSProperties) : undefined}
+              >
+                <span className="bubble-head live-block-speaker">
+                  <button
+                    type="button"
+                    className="bubble-speaker"
+                    title="Tap to name this voice"
+                    onClick={() => setNamingCluster(namingCluster === popKey ? null : popKey)}
+                  >
+                    <span className="bubble-name">{named ?? `Speaker ${clusterOrder.indexOf(b.cluster) + 1}`}</span>
+                  </button>
+                  {namingCluster === popKey && (
+                    <LiveSpeakerPopover
+                      users={users}
+                      currentName={named}
+                      onPick={(target) => {
+                        setNamingCluster(null);
+                        onNameSpeaker(b.cluster, target);
+                      }}
+                      onClose={() => setNamingCluster(null)}
+                    />
+                  )}
+                </span>
+                <div className="bubble-stack">
+                  {b.lines.map((l) => (
+                    <p key={l.key} className={`bubble${l.interim ? " bubble-interim" : ""}`}>
+                      {l.text}
+                    </p>
+                  ))}
+                </div>
+              </div>,
+            );
+            cursor += b.lines.length;
+            emitFlagsUpTo(cursor);
+          });
+          return items;
+        })()}
       </div>
       {showJump && (
         <button type="button" className="jump-live-pill" onClick={jumpToLive}>
@@ -296,6 +334,7 @@ export function CapturePage() {
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const [notesOpen, setNotesOpen] = useState(false);
   const [objectionArmed, setObjectionArmed] = useState(false);
+  const [flags, setFlags] = useState<LiveFlag[]>([]);
 
   const note = useNote(meeting?.id ?? null);
 
@@ -505,8 +544,16 @@ export function CapturePage() {
     setPhase("recording");
   };
 
-  const addMarker = () => {
-    note.appendLine(`[t=${Math.round(elapsedNow())}] Marker`);
+  const flagMoment = async () => {
+    if (!meeting) return;
+    const atMs = Math.round(elapsedNow());
+    const afterCount = lines.length; // position the divider at the current bottom
+    try {
+      const flag = await postFlag(meeting.id, atMs);
+      setFlags((prev) => [...prev, { id: flag.id, atMs: flag.atMs, afterCount, label: flag.label }]);
+    } catch {
+      /* transient — the flag button can be tapped again */
+    }
   };
 
   const handleNameSpeaker = async (cluster: string, target: { userId?: string; guestLabel?: string }) => {
@@ -658,16 +705,11 @@ export function CapturePage() {
             liveCaptions={liveCaptions}
             speakers={speakers}
             ownerUserId={user?.id ?? ""}
+            flags={flags}
             onNameSpeaker={(cluster, target) => void handleNameSpeaker(cluster, target)}
           />
           <aside className={`notes-pane${notesOpen ? " notes-pane-open" : ""}`}>
-            <NotesEditor
-              body={note.body}
-              onChange={note.setBody}
-              saveState={note.saveState}
-              rows={14}
-              onInsertMark={addMarker}
-            />
+            <NotesEditor body={note.body} onChange={note.setBody} saveState={note.saveState} rows={14} />
           </aside>
         </div>
       )}
@@ -682,7 +724,7 @@ export function CapturePage() {
             {phase === "recording" ? <IconPause size={24} /> : <IconPlay size={24} />}
             <span>{phase === "recording" ? "Pause" : "Resume"}</span>
           </button>
-          <button type="button" className="dock-btn" onClick={addMarker}>
+          <button type="button" className="dock-btn" onClick={() => void flagMoment()}>
             <IconFlag size={24} />
             <span>Flag</span>
           </button>

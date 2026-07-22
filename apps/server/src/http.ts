@@ -664,6 +664,27 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     return { speakers };
   });
 
+  app.post("/meetings/:id/flags", async (req, reply) => {
+    // Facilitator flags a moment during capture — a timeline marker that renders
+    // as a divider in the transcript. Not content, just a timestamp + label.
+    const m = getMeeting(req, reply, (req.params as { id: string }).id);
+    if (m.ownerUserId !== req.user.id) return fail(reply, 403, "owner only");
+    if (m.status !== "recording") return fail(reply, 409, "not recording");
+    const body = z
+      .object({ atMs: z.number().int().min(0), label: z.string().max(80).optional() })
+      .parse(req.body);
+    const flag = {
+      id: `f_${randomBytes(6).toString("hex")}`,
+      atMs: body.atMs,
+      label: body.label?.trim() || undefined,
+      byUserId: req.user.id,
+      at: new Date().toISOString(),
+    };
+    (m.flags ??= []).push(flag);
+    audit.emit({ actorUserId: req.user.id, action: "meeting.flagged", meetingId: m.id, detail: `t=${flag.atMs}` });
+    return { flag, meeting: m };
+  });
+
   app.post("/meetings/:id/stop", async (req, reply) => {
     const m = getMeeting(req, reply, (req.params as { id: string }).id);
     if (m.ownerUserId !== req.user.id) return fail(reply, 403, "owner only");

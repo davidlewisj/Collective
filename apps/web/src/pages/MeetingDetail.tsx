@@ -15,6 +15,7 @@ import { useUsers } from "../lib/useUsers";
 import { fmtClock } from "../lib/format";
 import { Avatar } from "../components/Avatar";
 import { buildSpeakerStyles } from "../lib/speakerColors";
+import { FlagDivider } from "../components/FlagDivider";
 import { NotesEditor } from "../components/NotesEditor";
 import { ShareSheet } from "../components/ShareSheet";
 import { useNote } from "../lib/useNote";
@@ -311,51 +312,68 @@ function TranscriptSection({
         <p className="detail-muted">No matches for “{query}”.</p>
       )}
       <div className="bubble-thread">
-        {visible.map((b, i) => {
-          const st = styles.get(b.key) ?? { side: "left" as const, kind: "unknown" as const };
-          const speaker = b.head.speakerUserId ? byId.get(b.head.speakerUserId) : undefined;
-          const name =
-            st.kind === "unknown"
-              ? `Speaker ${unknownOrder.indexOf(b.head.cluster) + 1}`
-              : (speaker?.displayName ?? b.head.guestLabel ?? "Speaker");
-          const popKey = `${b.head.id}-${i}`;
-          return (
-            <div
-              className={`bubble-group bubble-${st.side} bubble-kind-${st.kind}`}
-              key={popKey}
-              style={st.colorVar ? ({ "--bubble": st.colorVar } as React.CSSProperties) : undefined}
-            >
-              <div className="bubble-head">
-                <button
-                  type="button"
-                  className="bubble-speaker"
-                  title="Correct speaker"
-                  onClick={() => setPopoverFor(popoverFor === popKey ? null : popKey)}
-                >
-                  {st.kind !== "unknown" && <Avatar user={speaker} name={b.head.guestLabel ?? name} />}
-                  <span className="bubble-name">{name}</span>
-                </button>
-                {popoverFor === popKey && (
-                  <SpeakerPopover
-                    meeting={meeting}
-                    users={users}
-                    utterance={b.head}
-                    onApplied={onUtterances}
-                    onClose={() => setPopoverFor(null)}
-                  />
-                )}
-              </div>
-              <div className="bubble-stack">
-                {b.lines.map((l) => (
-                  <p key={l.id} className="bubble">
-                    {highlight(l.text, query)}
-                  </p>
-                ))}
-              </div>
-              <span className="mono bubble-ts">{fmtClock(b.head.startMs)}</span>
-            </div>
-          );
-        })}
+        {(() => {
+          // Interleave flag dividers by timestamp (only in the unfiltered view —
+          // dividers among search results would be misleading).
+          const flags = query ? [] : [...(meeting.flags ?? [])].sort((a, b) => a.atMs - b.atMs);
+          const items: ReactNode[] = [];
+          let fi = 0;
+          const emitFlagsUpTo = (ms: number) => {
+            while (fi < flags.length && flags[fi]!.atMs <= ms) {
+              const f = flags[fi]!;
+              items.push(<FlagDivider key={`flag-${f.id}`} atMs={f.atMs} label={f.label} />);
+              fi++;
+            }
+          };
+          visible.forEach((b, i) => {
+            emitFlagsUpTo(b.head.startMs);
+            const st = styles.get(b.key) ?? { side: "left" as const, kind: "unknown" as const };
+            const speaker = b.head.speakerUserId ? byId.get(b.head.speakerUserId) : undefined;
+            const name =
+              st.kind === "unknown"
+                ? `Speaker ${unknownOrder.indexOf(b.head.cluster) + 1}`
+                : (speaker?.displayName ?? b.head.guestLabel ?? "Speaker");
+            const popKey = `${b.head.id}-${i}`;
+            items.push(
+              <div
+                className={`bubble-group bubble-${st.side} bubble-kind-${st.kind}`}
+                key={popKey}
+                style={st.colorVar ? ({ "--bubble": st.colorVar } as React.CSSProperties) : undefined}
+              >
+                <div className="bubble-head">
+                  <button
+                    type="button"
+                    className="bubble-speaker"
+                    title="Correct speaker"
+                    onClick={() => setPopoverFor(popoverFor === popKey ? null : popKey)}
+                  >
+                    {st.kind !== "unknown" && <Avatar user={speaker} name={b.head.guestLabel ?? name} />}
+                    <span className="bubble-name">{name}</span>
+                  </button>
+                  {popoverFor === popKey && (
+                    <SpeakerPopover
+                      meeting={meeting}
+                      users={users}
+                      utterance={b.head}
+                      onApplied={onUtterances}
+                      onClose={() => setPopoverFor(null)}
+                    />
+                  )}
+                </div>
+                <div className="bubble-stack">
+                  {b.lines.map((l) => (
+                    <p key={l.id} className="bubble">
+                      {highlight(l.text, query)}
+                    </p>
+                  ))}
+                </div>
+                <span className="mono bubble-ts">{fmtClock(b.head.startMs)}</span>
+              </div>,
+            );
+          });
+          emitFlagsUpTo(Number.MAX_SAFE_INTEGER); // trailing flags after the last line
+          return items;
+        })()}
       </div>
     </section>
   );
