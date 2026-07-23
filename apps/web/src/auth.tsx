@@ -75,9 +75,27 @@ export function useAuth(): AuthContextValue {
   return ctx;
 }
 
+function PendingApproval({ name, onSignOut }: { name: string; onSignOut: () => void }) {
+  return (
+    <main className="login-page">
+      <div className="login-card">
+        <h1 className="login-wordmark">Collective</h1>
+        <p className="login-sub">
+          Thanks, {name.split(" ")[0] || "there"} — your request to join is waiting for an administrator to
+          approve it. You'll have access as soon as they do; try signing in again then.
+        </p>
+        <button type="button" className="btn-quiet btn-block" onClick={onSignOut}>
+          Sign out
+        </button>
+      </div>
+    </main>
+  );
+}
+
 export function RequireAuth({ children }: { children: ReactNode }) {
-  const { session } = useAuth();
+  const { session, user, logout } = useAuth();
   const location = useLocation();
   if (!session) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  if (user?.status === "pending") return <PendingApproval name={user.displayName} onSignOut={logout} />;
   return <>{children}</>;
 }

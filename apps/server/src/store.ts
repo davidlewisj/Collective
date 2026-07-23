@@ -155,7 +155,7 @@ const ENTITY = "entity_main"; // single-entity deployment per resolved Q1
 export function seedUsers(db: Db): void {
   const mk = (email: string, displayName: string, role: User["role"]): User => {
     const id = `u_${email.split("@")[0]}`;
-    return { id, email, displayName, role, entityId: ENTITY, speakerHue: speakerHueForId(id) };
+    return { id, email, displayName, role, entityId: ENTITY, speakerHue: speakerHueForId(id), status: "active" };
   };
   for (const u of [
     mk("dana@collective.dev", "Dana Whitfield", "org_admin"),
@@ -183,25 +183,75 @@ export function userByEmail(db: Db, email: string): User | undefined {
   return undefined;
 }
 
+export function userByOid(db: Db, oid: string): User | undefined {
+  if (!oid) return undefined;
+  for (const u of db.users.values()) if (u.entraOid === oid) return u;
+  return undefined;
+}
+
+/** Active org_admins (excludes pending and deactivated) — the "can this org still be administered" count. */
+export function activeAdminCount(db: Db): number {
+  let n = 0;
+  for (const u of db.users.values()) {
+    if (u.role === "org_admin" && u.status !== "pending" && !u.deactivated) n += 1;
+  }
+  return n;
+}
+
 /**
- * Microsoft sign-in user mapping: link by email when the account matches an
- * existing user; otherwise auto-provision as a member (least privilege — an
- * org_admin can promote via PUT /admin/users/:id/role).
+ * Microsoft sign-in user mapping into the single org (Q1). The bootstrap-admin
+ * email is provisioned (or promoted, if it already exists) to an active
+ * `org_admin` — otherwise a fresh production directory would have no admin to
+ * approve anyone. Every other new account joins as a **pending** member and
+ * stays out of all content until an org admin approves it.
+ *
+ * Identity is keyed on the Entra **`oid`** (immutable object id), not the email:
+ * a returning sign-in matches by oid so a renamed mailbox stays the same
+ * account, and a **reused** email (prior user deleted in Entra, address handed
+ * to someone new) cannot inherit the old account. Email is used only to link a
+ * first Microsoft sign-in to a pre-existing/seeded directory row that has no
+ * oid yet (then the oid is stamped on); an email whose row is already bound to a
+ * *different* oid is treated as reuse → a fresh account is provisioned.
  */
 export function linkOrProvisionUser(
   db: Db,
   claims: { email: string; name: string; oid: string },
+  opts: { bootstrapAdminEmail?: string } = {},
 ): User {
-  const existing = userByEmail(db, claims.email);
-  if (existing) return existing;
+  const isBootstrapAdmin =
+    !!opts.bootstrapAdminEmail && claims.email.toLowerCase() === opts.bootstrapAdminEmail.toLowerCase();
+
+  // 1. Stable identity: match the immutable Entra oid.
+  let existing = userByOid(db, claims.oid);
+  // 2. First-time link: bind this oid to a pre-existing row that has no oid yet
+  //    (seeded/dev accounts, or rows provisioned before oids were stored). A row
+  //    already bound to a different oid means the email was reused — don't link.
+  if (!existing) {
+    const byEmail = userByEmail(db, claims.email);
+    if (byEmail && !byEmail.entraOid) {
+      byEmail.entraOid = claims.oid;
+      existing = byEmail;
+    }
+  }
+  if (existing) {
+    // Idempotent bootstrap: guarantee the named admin is an active org_admin,
+    // even if they signed in (or were seeded) before the env was set.
+    if (isBootstrapAdmin && (existing.role !== "org_admin" || existing.status === "pending")) {
+      existing.role = "org_admin";
+      existing.status = "active";
+    }
+    return existing;
+  }
   const id = `u_ms_${claims.oid.replace(/[^a-zA-Z0-9]/g, "").slice(0, 12) || Date.now().toString(36)}`;
   const user: User = {
     id,
     email: claims.email.toLowerCase(),
     displayName: claims.name,
-    role: "member",
+    role: isBootstrapAdmin ? "org_admin" : "member",
     entityId: ENTITY,
     speakerHue: speakerHueForId(id),
+    status: isBootstrapAdmin ? "active" : "pending",
+    entraOid: claims.oid,
   };
   db.users.set(id, user);
   return user;

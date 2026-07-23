@@ -8,15 +8,18 @@ import type {
   RetentionPolicy,
 } from "@collective/shared";
 import {
+  approveMember,
   createOAuthClient,
   deleteOAuthClient,
   deleteVoiceprint,
+  denyMember,
   enrollVoiceprint,
   getAudit,
   getBaaRegistry,
   getCalendarPreview,
   getConnectorTokenStatus,
   getConsentPolicy,
+  getMembers,
   getRetention,
   getSettings,
   getVoiceprint,
@@ -28,6 +31,7 @@ import {
   putRetention,
   putSettings,
   revokeConnectorToken,
+  type Member,
   type OAuthClient,
   type VoiceprintStatus,
 } from "../api";
@@ -44,6 +48,7 @@ import {
   IconShield,
   IconSliders,
   IconSparkle,
+  IconX,
 } from "../components/icons";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -590,6 +595,148 @@ function ComplianceGlance() {
   );
 }
 
+function roleLabel(role: string): string {
+  switch (role) {
+    case "org_admin":
+      return "Admin";
+    case "entity_admin":
+      return "Entity admin";
+    case "compliance_auditor":
+      return "Auditor";
+    case "guest_viewer":
+      return "Guest";
+    default:
+      return "Member";
+  }
+}
+
+/**
+ * Org directory + join-request approvals (org_admin only). Everyone who signs
+ * in lands here; new sign-ins are `pending` and can't touch content until an
+ * admin approves them (server enforces the 403 gate — this is the control).
+ */
+function DirectoryCard() {
+  const [members, setMembers] = useState<Member[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = () => {
+    getMembers()
+      .then(setMembers)
+      .catch(() => setMembers([]));
+  };
+  useEffect(refresh, []);
+
+  const act = async (id: string, fn: (id: string) => Promise<unknown>) => {
+    setBusy(id);
+    setError(null);
+    try {
+      await fn(id);
+      refresh();
+    } catch {
+      setError("Couldn't update that request. Try again.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const pending = members?.filter((m) => m.status === "pending") ?? [];
+  const active = members?.filter((m) => m.status === "active") ?? [];
+  // Usable administrators (active, not deactivated). One is a lock-out risk: if
+  // that account is lost — e.g. removed from Microsoft — nobody can manage the
+  // workspace. The server also refuses to demote the last admin.
+  const adminCount = (members ?? []).filter(
+    (m) => m.role === "org_admin" && m.status === "active" && !m.deactivated,
+  ).length;
+
+  return (
+    <section id="directory" className="set-card workspace-card">
+      <h2 className="section-heading">Directory</h2>
+      <p className="set-hint">
+        Everyone who has signed in to this workspace. A new sign-in waits here as a join request until you
+        approve it — until then it can't reach any meeting, transcript, or note.
+      </p>
+
+      {members !== null && adminCount <= 1 && (
+        <p className="directory-warn" role="status">
+          Only one administrator on this workspace. Add a second org admin as a backup so you're not locked
+          out if this account is lost — for example, if it's removed from Microsoft.
+        </p>
+      )}
+
+      {error && (
+        <span className="field-error" role="alert">
+          {error}
+        </span>
+      )}
+
+      {pending.length > 0 && (
+        <div className="directory-group">
+          <h3 className="directory-group-title">
+            Join requests <span className="directory-count">{pending.length}</span>
+          </h3>
+          <ul className="member-list">
+            {pending.map((m) => (
+              <li key={m.id} className="member-row member-row-pending">
+                <div className="member-ident">
+                  <span className="member-name">{m.displayName}</span>
+                  <span className="detail-muted">{m.email}</span>
+                </div>
+                <div className="member-actions">
+                  <button
+                    type="button"
+                    className="btn icon-text-btn"
+                    disabled={busy === m.id}
+                    onClick={() => void act(m.id, approveMember)}
+                  >
+                    <IconCheck size={16} />
+                    <span>Approve</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-quiet icon-text-btn"
+                    disabled={busy === m.id}
+                    onClick={() => void act(m.id, denyMember)}
+                  >
+                    <IconX size={16} />
+                    <span>Deny</span>
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="directory-group">
+        <h3 className="directory-group-title">
+          Members {active.length > 0 && <span className="directory-count">{active.length}</span>}
+        </h3>
+        {members === null ? (
+          <p className="detail-muted">Loading…</p>
+        ) : active.length === 0 ? (
+          <p className="detail-muted">No approved members yet.</p>
+        ) : (
+          <ul className="member-list">
+            {active.map((m) => (
+              <li key={m.id} className={`member-row${m.deactivated ? " member-row-off" : ""}`}>
+                <div className="member-ident">
+                  <span className="member-name">{m.displayName}</span>
+                  <span className="detail-muted">{m.email}</span>
+                </div>
+                <div className="member-tags">
+                  {m.deactivated && <span className="member-tag member-tag-off">Deactivated</span>}
+                  <span className="member-tag">{roleLabel(m.role)}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function BaaCard() {
   const [reg, setReg] = useState<BaaRegistry | null>(null);
   const [savedReg, setSavedReg] = useState<BaaRegistry | null>(null);
@@ -980,6 +1127,7 @@ export function SettingsPage() {
     ...(showWorkspace ? [{ id: "workspace", label: "Workspace" } as Anchor] : []),
     ...(isAdmin
       ? ([
+          { id: "directory", label: "Directory" },
           { id: "baa", label: "BAA registry" },
           { id: "consent", label: "Consent policy" },
           { id: "retention", label: "Retention" },
@@ -1058,6 +1206,7 @@ export function SettingsPage() {
                 {isAdmin && <ComplianceGlance />}
                 {isAdmin && (
                   <>
+                    <DirectoryCard />
                     <BaaCard />
                     <ConsentCard />
                     <RetentionCard />

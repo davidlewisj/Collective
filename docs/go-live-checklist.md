@@ -70,6 +70,16 @@ own; do them top to bottom. Cross-references: `docs/deploy.md` (topology), `docs
       force-off). **⚠ Action for the current Render staging:** it advertises a public URL, so dev-login
       will now be OFF there — set `COLLECTIVE_ALLOW_DEV_LOGIN=1` to keep using it with test data until
       Microsoft sign-in is live, then remove it for real production.
+- [x] **Directory is empty on a fresh prod boot (implemented).** The demo `@collective.dev` users are
+      only seeded where dev-login is allowed, so a public deploy starts with **no accounts** and fills
+      from Microsoft sign-ins (§8.1 D18). Set **`COLLECTIVE_BOOTSTRAP_ADMIN`** to the owner's Microsoft
+      email **before their first sign-in**: that account is provisioned (or promoted, idempotently) to
+      an active **org_admin** — the one admin who can then approve everyone else. Value is the plain
+      email (case-insensitive), e.g. `dlewis@tmjsleepsolutionsnw.com`.
+- [ ] **Approve joiners in-app.** Every other Microsoft sign-in lands as **pending** and is blocked from
+      all content until the admin approves it in **Settings → Workspace → Directory** (Approve / Deny).
+      Sanity check: the bootstrap admin signs in first, sees themselves active, then approves real staff
+      as they arrive. (Deny deletes the request and revokes its sessions.)
 - [ ] **MFA + device registration** (issues #14–#15) and **SCIM** per spec §6 — required for the full
       access-control posture; scope with the sponsor.
 - [ ] Confirm the idle-session timeout (15 min, §2.6.1) and the RBAC/audit invariants are intact
@@ -108,5 +118,6 @@ own; do them top to bottom. Cross-references: `docs/deploy.md` (topology), `docs
 | `COLLECTIVE_BAA` | Seed executed BAAs at boot | `assemblyai,claudeWorkspace,microsoft` (only signed ones) |
 | `COLLECTIVE_PHI_FAILSAFE` | `0` loosens the unanswered-flag rule | unset (fail-safe on) |
 | `COLLECTIVE_ALLOW_DEV_LOGIN` | Force passwordless dev-login on/off | unset in prod (off); `1` on test-data staging |
+| `COLLECTIVE_BOOTSTRAP_ADMIN` | Email provisioned/promoted to active org_admin on first sign-in (§8.1 D18) | the owner's Microsoft email |
 | `GRAPH_TENANT_ID` / `GRAPH_CLIENT_ID` / `GRAPH_CLIENT_SECRET` / `GRAPH_REDIRECT_URI` | Microsoft Entra sign-in + calendar | set (after BAA) |
 | `OAUTH_SCOPES` | MCP connector scope set | optional (has a default) |

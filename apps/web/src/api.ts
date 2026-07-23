@@ -480,6 +480,31 @@ export function putBaaRegistry(body: BaaRegistry): Promise<BaaRegistry> {
   return api<{ baa: BaaRegistry }>("/admin/baa-registry", { method: "PUT", body }).then((r) => r.baa);
 }
 
+export interface Member {
+  id: string;
+  email: string;
+  displayName: string;
+  role: string;
+  status: "active" | "pending";
+  deactivated: boolean;
+}
+
+export function getMembers(): Promise<Member[]> {
+  return api<{ members: Member[] }>("/admin/members").then((r) => r.members);
+}
+
+export function approveMember(id: string): Promise<Member> {
+  return api<{ member: Member }>(`/admin/members/${encodeURIComponent(id)}/approve`, { method: "POST" }).then(
+    (r) => r.member,
+  );
+}
+
+export function denyMember(id: string): Promise<void> {
+  return api<{ ok: boolean }>(`/admin/members/${encodeURIComponent(id)}/deny`, { method: "POST" }).then(
+    () => undefined,
+  );
+}
+
 export function getConsentPolicy(): Promise<ConsentPolicy> {
   return api<{ policy: ConsentPolicy }>("/admin/consent-policy").then((r) => r.policy);
 }

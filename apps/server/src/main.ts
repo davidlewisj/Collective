@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AuditLog } from "./audit.js";
+import { devLoginAllowed } from "./config.js";
 import { buildApp } from "./http.js";
 import { makeTranscriber } from "./adapters/transcriber.js";
 import { makeVoiceEngine } from "./adapters/voice.js";
@@ -28,7 +29,11 @@ const webDir = process.env.COLLECTIVE_WEB_DIR
   : join(dirname(serverDir), "web", "dist"); // apps/web/dist
 
 const db = createDb();
-seedUsers(db);
+// Seed the demo directory only where dev-login is allowed (local dev, tests,
+// or an explicitly-flagged staging box). A real production deploy starts with
+// an empty directory and fills from Microsoft sign-ins — the bootstrap admin
+// (COLLECTIVE_BOOTSTRAP_ADMIN) is provisioned active on first sign-in.
+if (devLoginAllowed()) seedUsers(db);
 
 // Durable state: hydrate the snapshot, then let env-configured policy win.
 const snapshot = new StateSnapshotStore(dataDir, db);

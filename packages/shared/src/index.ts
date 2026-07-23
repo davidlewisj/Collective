@@ -26,6 +26,20 @@ export interface User {
    */
   bubbleHue?: number;
   deactivated?: boolean;
+  /**
+   * Membership state within the org. Absent = active (seeded/existing users).
+   * A real Microsoft sign-in provisions as `pending` and can't reach content
+   * until an org admin approves it; the bootstrap admin is provisioned active.
+   */
+  status?: "active" | "pending";
+  /**
+   * Entra ID immutable object id (`oid` claim). This — not the email — is the
+   * stable identity a returning sign-in is matched on, so a renamed mailbox
+   * still maps to the same account and a **reused** email (old user deleted in
+   * Entra, address reassigned) can't inherit the prior account. Absent on
+   * seeded/dev accounts and stamped on first Microsoft sign-in.
+   */
+  entraOid?: string;
 }
 
 export type MeetingMode = "virtual_desktop" | "in_person" | "mobile_speakerphone";

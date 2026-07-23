@@ -43,3 +43,14 @@ export function devLoginAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
     !!(env.COLLECTIVE_PUBLIC_URL || env.RENDER_EXTERNAL_URL) || env.NODE_ENV === "production";
   return !looksPublic;
 }
+
+/**
+ * The email that bootstraps the org's first admin. The matching Microsoft
+ * sign-in is provisioned (or promoted) to an active `org_admin`; without it a
+ * fresh production directory would have no admin to approve anyone. Normalized
+ * to lowercase; empty/unset → no bootstrap.
+ */
+export function bootstrapAdminEmail(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const email = env.COLLECTIVE_BOOTSTRAP_ADMIN?.trim().toLowerCase();
+  return email || undefined;
+}
