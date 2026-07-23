@@ -33,7 +33,7 @@ import {
   speakerNameFn,
 } from "./pipeline.js";
 import { search } from "./search.js";
-import { Db, linkOrProvisionUser, newId, userByEmail } from "./store.js";
+import { Db, activeAdminCount, linkOrProvisionUser, newId, userByEmail } from "./store.js";
 import { MsGraph } from "./msgraph.js";
 import { OAUTH_SCOPES, OAuthProvider } from "./oauth.js";
 import { bootstrapAdminEmail, devLoginAllowed, webOrigin as resolveWebOrigin } from "./config.js";
@@ -972,6 +972,19 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     if (id === req.user.id) return fail(reply, 400, "cannot change your own role");
     const target = db.users.get(id);
     if (!target) return fail(reply, 404, "unknown user");
+    // Never strip the last administrator: demoting the sole active org_admin
+    // would lock the org out of all policy management and join approvals. Today
+    // the self-change guard above already makes this unreachable (the only
+    // admin is always the caller, who can't demote themselves) — this is
+    // defense-in-depth for any future off-boarding/deactivation path and it
+    // pairs with the Directory low-admin warning. Keep a backup admin instead.
+    const demotingLastAdmin =
+      target.role === "org_admin" &&
+      role !== "org_admin" &&
+      target.status !== "pending" &&
+      !target.deactivated &&
+      activeAdminCount(db) <= 1;
+    if (demotingLastAdmin) return fail(reply, 409, "cannot remove the last administrator");
     target.role = role;
     audit.emit({ actorUserId: req.user.id, action: "admin.role_changed", detail: `${id} → ${role}` });
     return { user: target };

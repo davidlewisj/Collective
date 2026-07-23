@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { auth, login, makeCtx, type Ctx } from "./helpers.js";
-import { linkOrProvisionUser } from "../src/store.js";
+import { activeAdminCount, linkOrProvisionUser } from "../src/store.js";
 
 const BOOTSTRAP = "owner@clinic.example";
 
@@ -174,5 +174,91 @@ describe("org membership — admin directory & approvals", () => {
     const dana = await login(ctx, "dana@collective.dev");
     const res = await ctx.app.inject({ method: "POST", url: "/admin/members/u_nope/approve", headers: auth(dana) });
     expect(res.statusCode).toBe(404);
+  });
+});
+
+describe("org membership — stable Entra-oid identity", () => {
+  it("matches a returning sign-in by oid even after the mailbox is renamed", () => {
+    const ctx = makeCtx();
+    const first = linkOrProvisionUser(ctx.db, msClaims("old.name@clinic.example", "Pat Doe", "oid-stable"));
+    const renamed = linkOrProvisionUser(ctx.db, msClaims("new.name@clinic.example", "Pat Doe", "oid-stable"));
+    expect(renamed.id).toBe(first.id); // same account — identity is the oid, not the email
+    expect([...ctx.db.users.values()].filter((u) => u.entraOid === "oid-stable")).toHaveLength(1);
+  });
+
+  it("does NOT let a reused email inherit a prior (admin) account", () => {
+    const ctx = makeCtx();
+    // A departed admin, later deleted in Entra; their app row lingers.
+    const departed = linkOrProvisionUser(ctx.db, msClaims("shared@clinic.example", "First Person", "oid-first"));
+    departed.role = "org_admin";
+    departed.status = "active";
+    // The address is reassigned to a new hire (a DIFFERENT Entra oid).
+    const reused = linkOrProvisionUser(ctx.db, msClaims("shared@clinic.example", "Second Person", "oid-second"));
+    expect(reused.id).not.toBe(departed.id); // fresh account, no inheritance
+    expect(reused.role).toBe("member");
+    expect(reused.status).toBe("pending");
+    // The old admin record is untouched (cleanup is a separate off-boarding step).
+    expect(ctx.db.users.get(departed.id)!.role).toBe("org_admin");
+  });
+
+  it("binds the oid to a pre-existing directory row on first Microsoft sign-in", () => {
+    const ctx = makeCtx();
+    expect(ctx.db.users.get("u_priya")!.entraOid).toBeUndefined();
+    const linked = linkOrProvisionUser(ctx.db, msClaims("priya@collective.dev", "Priya N", "oid-priya"));
+    expect(linked.id).toBe("u_priya");
+    expect(linked.entraOid).toBe("oid-priya");
+    // Once bound, a later sign-in under a changed email still lands on the same row.
+    const again = linkOrProvisionUser(ctx.db, msClaims("priya.natarajan@collective.dev", "Priya N", "oid-priya"));
+    expect(again.id).toBe("u_priya");
+  });
+});
+
+describe("org membership — last-admin guardrail", () => {
+  it("activeAdminCount counts only active, non-deactivated org_admins", () => {
+    const ctx = makeCtx();
+    expect(activeAdminCount(ctx.db)).toBe(1); // seeded dana
+    const p = linkOrProvisionUser(ctx.db, msClaims("new@clinic.example", "New", "oid-new"));
+    p.role = "org_admin"; // still pending — does not count
+    expect(activeAdminCount(ctx.db)).toBe(1);
+    p.status = "active";
+    expect(activeAdminCount(ctx.db)).toBe(2);
+    p.deactivated = true; // deactivated — does not count
+    expect(activeAdminCount(ctx.db)).toBe(1);
+  });
+
+  it("allows demoting an admin while a second admin remains", async () => {
+    const ctx = makeCtx();
+    const dana = await login(ctx, "dana@collective.dev");
+    const promote = await ctx.app.inject({
+      method: "PUT",
+      url: "/admin/users/u_omar/role",
+      headers: auth(dana),
+      payload: { role: "org_admin" },
+    });
+    expect(promote.statusCode).toBe(200);
+    expect(activeAdminCount(ctx.db)).toBe(2);
+
+    const demote = await ctx.app.inject({
+      method: "PUT",
+      url: "/admin/users/u_omar/role",
+      headers: auth(dana),
+      payload: { role: "member" },
+    });
+    expect(demote.statusCode).toBe(200); // fine — dana is still an admin
+    expect(activeAdminCount(ctx.db)).toBe(1);
+  });
+
+  it("keeps the sole admin from demoting themselves (can't reach zero admins)", async () => {
+    const ctx = makeCtx();
+    const dana = await login(ctx, "dana@collective.dev");
+    expect(activeAdminCount(ctx.db)).toBe(1);
+    const res = await ctx.app.inject({
+      method: "PUT",
+      url: "/admin/users/u_dana/role",
+      headers: auth(dana),
+      payload: { role: "member" },
+    });
+    expect(res.statusCode).toBe(400); // self-change guard; org still has its admin
+    expect(activeAdminCount(ctx.db)).toBe(1);
   });
 });

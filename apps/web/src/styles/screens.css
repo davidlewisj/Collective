@@ -1966,6 +1966,14 @@
 }
 
 /* ------------------------------ directory ------------------------------- */
+.directory-warn {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-card);
+  border: var(--app-hairline) solid color-mix(in srgb, var(--c-state-processing) 45%, var(--c-mist));
+  background: color-mix(in srgb, var(--c-state-processing) 10%, var(--c-surface-raised));
+  color: var(--c-ink);
+  font: var(--type-body-sm);
+}
 .directory-group {
   display: flex;
   flex-direction: column;

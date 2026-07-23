@@ -642,6 +642,12 @@ function DirectoryCard() {
 
   const pending = members?.filter((m) => m.status === "pending") ?? [];
   const active = members?.filter((m) => m.status === "active") ?? [];
+  // Usable administrators (active, not deactivated). One is a lock-out risk: if
+  // that account is lost — e.g. removed from Microsoft — nobody can manage the
+  // workspace. The server also refuses to demote the last admin.
+  const adminCount = (members ?? []).filter(
+    (m) => m.role === "org_admin" && m.status === "active" && !m.deactivated,
+  ).length;
 
   return (
     <section id="directory" className="set-card workspace-card">
@@ -650,6 +656,13 @@ function DirectoryCard() {
         Everyone who has signed in to this workspace. A new sign-in waits here as a join request until you
         approve it — until then it can't reach any meeting, transcript, or note.
       </p>
+
+      {members !== null && adminCount <= 1 && (
+        <p className="directory-warn" role="status">
+          Only one administrator on this workspace. Add a second org admin as a backup so you're not locked
+          out if this account is lost — for example, if it's removed from Microsoft.
+        </p>
+      )}
 
       {error && (
         <span className="field-error" role="alert">
