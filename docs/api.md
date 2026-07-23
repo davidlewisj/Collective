@@ -15,6 +15,8 @@ Every content read is audit-logged server-side. All list/detail responses are AC
 | GET `/admin/members` | → `{members:[{id, email, displayName, role, status, deactivated}]}` | org_admin; full org directory, **pending first** (join requests), then active alphabetical |
 | POST `/admin/members/:id/approve` | → `{member}` | org_admin; `pending → active` (409 if not pending); audited `admin.member_approved` |
 | POST `/admin/members/:id/deny` | → `{ok}` | org_admin; deletes the unapproved account and revokes its sessions (409 if not pending); audited `admin.member_denied` |
+| POST `/admin/members/:id/deactivate` | → `{member}` | org_admin; off-board an **active** member — soft-deactivates (record/notes/meetings/audit preserved) and revokes sessions. 409 if not active, already deactivated, or the **last active org_admin**; audited `admin.member_deactivated` |
+| POST `/admin/members/:id/reactivate` | → `{member}` | org_admin; restores a deactivated member (409 if not deactivated); audited `admin.member_reactivated` |
 | GET `/meetings` | `?q=&participant=` → `{meetings}` | Accessible meetings, newest first |
 | POST `/meetings` | `{title?, mode, attendeeUserIds?}` → `{meeting}` | Creates `draft`; owner = caller |
 | GET `/meetings/:id` | → `{meeting, myLayers}` | `myLayers`: which layers caller may read |

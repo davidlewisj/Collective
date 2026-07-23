@@ -1034,6 +1034,39 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     return { ok: true };
   });
 
+  app.post("/admin/members/:id/deactivate", async (req, reply) => {
+    // Off-board an APPROVED member: soft-deactivate (not delete) so their
+    // authored notes, owned meetings, and audit trail stay intact — then revoke
+    // their sessions so access stops immediately. Reversible via /reactivate.
+    // (Pending join requests use /deny, which hard-deletes an empty account.)
+    adminOnly(req, reply);
+    const target = db.users.get((req.params as { id: string }).id);
+    if (!target || target.entityId !== req.user.entityId) return fail(reply, 404, "unknown user");
+    if ((target.status ?? "active") !== "active") return fail(reply, 409, "not an active member");
+    if (target.deactivated) return fail(reply, 409, "already deactivated");
+    // Never off-board the last administrator — it would lock the org out of all
+    // policy management and join approvals (same invariant as the role endpoint;
+    // this is the reachable off-boarding path it was written for).
+    if (target.role === "org_admin" && activeAdminCount(db) <= 1) {
+      return fail(reply, 409, "cannot off-board the last administrator");
+    }
+    target.deactivated = true;
+    for (const [k, s] of db.sessions) if (s.userId === target.id) db.sessions.delete(k);
+    audit.emit({ actorUserId: req.user.id, action: "admin.member_deactivated", detail: target.id });
+    return { member: memberView(target) };
+  });
+
+  app.post("/admin/members/:id/reactivate", async (req, reply) => {
+    // Restore a previously off-boarded member (they can sign in again).
+    adminOnly(req, reply);
+    const target = db.users.get((req.params as { id: string }).id);
+    if (!target || target.entityId !== req.user.entityId) return fail(reply, 404, "unknown user");
+    if (!target.deactivated) return fail(reply, 409, "not deactivated");
+    target.deactivated = false;
+    audit.emit({ actorUserId: req.user.id, action: "admin.member_reactivated", detail: target.id });
+    return { member: memberView(target) };
+  });
+
   /* -------- MCP OAuth client allowlist (org_admin; spec §6.4) --------- */
 
   app.post("/admin/oauth-clients", async (req, reply) => {

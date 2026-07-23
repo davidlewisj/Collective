@@ -8,8 +8,10 @@ import type {
   RetentionPolicy,
 } from "@collective/shared";
 import {
+  ApiError,
   approveMember,
   createOAuthClient,
+  deactivateMember,
   deleteOAuthClient,
   deleteVoiceprint,
   denyMember,
@@ -30,6 +32,7 @@ import {
   putConsentPolicy,
   putRetention,
   putSettings,
+  reactivateMember,
   revokeConnectorToken,
   type Member,
   type OAuthClient,
@@ -616,9 +619,12 @@ function roleLabel(role: string): string {
  * admin approves them (server enforces the 403 gate — this is the control).
  */
 function DirectoryCard() {
+  const { user: me } = useAuth();
   const [members, setMembers] = useState<Member[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Id of the member whose off-board is awaiting an inline confirm.
+  const [confirmId, setConfirmId] = useState<string | null>(null);
 
   const refresh = () => {
     getMembers()
@@ -633,8 +639,11 @@ function DirectoryCard() {
     try {
       await fn(id);
       refresh();
-    } catch {
-      setError("Couldn't update that request. Try again.");
+    } catch (e) {
+      // Surface the server's reason for business-rule refusals (e.g. the
+      // last-admin block); keep internal codes out of the UI otherwise.
+      const reason = e instanceof ApiError && e.status === 409 ? e.code : "Couldn't complete that action. Try again.";
+      setError(reason.charAt(0).toUpperCase() + reason.slice(1));
     } finally {
       setBusy(null);
     }
@@ -727,6 +736,45 @@ function DirectoryCard() {
                 <div className="member-tags">
                   {m.deactivated && <span className="member-tag member-tag-off">Deactivated</span>}
                   <span className="member-tag">{roleLabel(m.role)}</span>
+                  {m.deactivated ? (
+                    <button
+                      type="button"
+                      className="btn-quiet member-action"
+                      disabled={busy === m.id}
+                      onClick={() => void act(m.id, reactivateMember)}
+                    >
+                      Restore
+                    </button>
+                  ) : m.id === me?.id ? null : confirmId === m.id ? (
+                    <span className="member-confirm">
+                      <span className="detail-muted">Off-board?</span>
+                      <button
+                        type="button"
+                        className="btn-quiet member-action-danger"
+                        disabled={busy === m.id}
+                        onClick={() => {
+                          setConfirmId(null);
+                          void act(m.id, deactivateMember);
+                        }}
+                      >
+                        Off-board
+                      </button>
+                      <button type="button" className="btn-quiet" onClick={() => setConfirmId(null)}>
+                        Cancel
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn-quiet member-action"
+                      onClick={() => {
+                        setError(null);
+                        setConfirmId(m.id);
+                      }}
+                    >
+                      Off-board
+                    </button>
+                  )}
                 </div>
               </li>
             ))}
