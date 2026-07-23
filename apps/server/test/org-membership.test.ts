@@ -262,3 +262,84 @@ describe("org membership — last-admin guardrail", () => {
     expect(activeAdminCount(ctx.db)).toBe(1);
   });
 });
+
+describe("org membership — off-boarding active members", () => {
+  it("deactivates an approved member: blocks access, revokes sessions, keeps the record", async () => {
+    const ctx = makeCtx();
+    const dana = await login(ctx, "dana@collective.dev");
+    const omar = await login(ctx, "omar@collective.dev");
+    // Omar can use the app before off-boarding.
+    expect((await ctx.app.inject({ method: "GET", url: "/meetings", headers: auth(omar) })).statusCode).toBe(200);
+
+    const res = await ctx.app.inject({ method: "POST", url: "/admin/members/u_omar/deactivate", headers: auth(dana) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().member.deactivated).toBe(true);
+    // Soft delete: the record survives (notes/meetings/audit stay intact).
+    expect(ctx.db.users.has("u_omar")).toBe(true);
+    expect(ctx.audit.query({}).some((e) => e.action === "admin.member_deactivated" && e.detail === "u_omar")).toBe(true);
+
+    // Session revoked immediately, and re-login is refused.
+    expect((await ctx.app.inject({ method: "GET", url: "/meetings", headers: auth(omar) })).statusCode).toBe(401);
+    const relogin = await ctx.app.inject({ method: "POST", url: "/auth/dev-login", payload: { email: "omar@collective.dev" } });
+    expect(relogin.statusCode).toBe(404); // deactivated accounts can't sign in
+
+    // Hidden from the attendee directory.
+    const users = (await ctx.app.inject({ method: "GET", url: "/users", headers: auth(dana) })).json().users as Array<{ id: string }>;
+    expect(users.some((u) => u.id === "u_omar")).toBe(false);
+  });
+
+  it("reactivates an off-boarded member", async () => {
+    const ctx = makeCtx();
+    const dana = await login(ctx, "dana@collective.dev");
+    await ctx.app.inject({ method: "POST", url: "/admin/members/u_omar/deactivate", headers: auth(dana) });
+
+    const res = await ctx.app.inject({ method: "POST", url: "/admin/members/u_omar/reactivate", headers: auth(dana) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().member.deactivated).toBe(false);
+    expect(ctx.audit.query({}).some((e) => e.action === "admin.member_reactivated" && e.detail === "u_omar")).toBe(true);
+    // Can sign in again.
+    expect((await ctx.app.inject({ method: "POST", url: "/auth/dev-login", payload: { email: "omar@collective.dev" } })).statusCode).toBe(200);
+  });
+
+  it("refuses to off-board the last administrator (409, reachable)", async () => {
+    const ctx = makeCtx();
+    const dana = await login(ctx, "dana@collective.dev");
+    expect(activeAdminCount(ctx.db)).toBe(1);
+    const res = await ctx.app.inject({ method: "POST", url: "/admin/members/u_dana/deactivate", headers: auth(dana) });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toMatch(/last administrator/i);
+    expect(ctx.db.users.get("u_dana")!.deactivated).toBeFalsy();
+  });
+
+  it("allows off-boarding an admin while a backup admin remains", async () => {
+    const ctx = makeCtx();
+    const dana = await login(ctx, "dana@collective.dev");
+    await ctx.app.inject({ method: "PUT", url: "/admin/users/u_omar/role", headers: auth(dana), payload: { role: "org_admin" } });
+    expect(activeAdminCount(ctx.db)).toBe(2);
+    const res = await ctx.app.inject({ method: "POST", url: "/admin/members/u_omar/deactivate", headers: auth(dana) });
+    expect(res.statusCode).toBe(200);
+    expect(activeAdminCount(ctx.db)).toBe(1);
+  });
+
+  it("rejects deactivating a pending member (use deny), and double-deactivate / bad restore", async () => {
+    const ctx = makeCtx();
+    const dana = await login(ctx, "dana@collective.dev");
+    seedPending(ctx, "new@clinic.example", "New Person", "oid-new");
+    const pendingId = [...ctx.db.users.values()].find((u) => u.status === "pending")!.id;
+
+    expect((await ctx.app.inject({ method: "POST", url: `/admin/members/${pendingId}/deactivate`, headers: auth(dana) })).statusCode).toBe(409);
+    // Restoring a member who isn't deactivated is a 409.
+    expect((await ctx.app.inject({ method: "POST", url: "/admin/members/u_priya/reactivate", headers: auth(dana) })).statusCode).toBe(409);
+    // Deactivate omar once (ok), twice (409).
+    expect((await ctx.app.inject({ method: "POST", url: "/admin/members/u_priya/deactivate", headers: auth(dana) })).statusCode).toBe(200);
+    expect((await ctx.app.inject({ method: "POST", url: "/admin/members/u_priya/deactivate", headers: auth(dana) })).statusCode).toBe(409);
+  });
+
+  it("is admin-only and 404s unknown ids", async () => {
+    const ctx = makeCtx();
+    const omar = await login(ctx, "omar@collective.dev");
+    const dana = await login(ctx, "dana@collective.dev");
+    expect((await ctx.app.inject({ method: "POST", url: "/admin/members/u_priya/deactivate", headers: auth(omar) })).statusCode).toBe(403);
+    expect((await ctx.app.inject({ method: "POST", url: "/admin/members/u_ghost/deactivate", headers: auth(dana) })).statusCode).toBe(404);
+  });
+});

@@ -2050,6 +2050,8 @@
 .member-tags {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: var(--space-2);
   flex: none;
 }
@@ -2064,5 +2066,26 @@
 }
 .member-tag-off {
   color: var(--c-state-error);
+  background: color-mix(in srgb, var(--c-state-error) 12%, transparent);
+}
+.member-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font: var(--type-caption);
+}
+/* Row actions are compact and secondary next to the tags. */
+.member-action,
+.member-action-danger {
+  font: var(--type-body-sm);
+  font-weight: 600;
+  padding: var(--space-1) var(--space-2);
+  min-height: 0;
+  border-radius: var(--radius-control);
+}
+.member-action-danger {
+  color: var(--c-state-error);
+}
+.member-action-danger:hover:not(:disabled) {
   background: color-mix(in srgb, var(--c-state-error) 12%, transparent);
 }

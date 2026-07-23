@@ -80,6 +80,11 @@ own; do them top to bottom. Cross-references: `docs/deploy.md` (topology), `docs
       all content until the admin approves it in **Settings → Workspace → Directory** (Approve / Deny).
       Sanity check: the bootstrap admin signs in first, sees themselves active, then approves real staff
       as they arrive. (Deny deletes the request and revokes its sessions.)
+- [ ] **Off-board departing staff there too.** In the same Directory, an admin can **Off-board** an
+      approved member (soft-deactivates — their notes/meetings/audit stay intact — and cuts access
+      immediately) and **Restore** them later. Keep ≥ 2 admins: the last active admin can't be demoted or
+      off-boarded (the Directory warns at one admin). Until SCIM (#14) syncs Entra deletions, off-board
+      here when someone leaves.
 - [ ] **MFA + device registration** (issues #14–#15) and **SCIM** per spec §6 — required for the full
       access-control posture; scope with the sponsor.
 - [ ] Confirm the idle-session timeout (15 min, §2.6.1) and the RBAC/audit invariants are intact

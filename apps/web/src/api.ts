@@ -505,6 +505,18 @@ export function denyMember(id: string): Promise<void> {
   );
 }
 
+export function deactivateMember(id: string): Promise<Member> {
+  return api<{ member: Member }>(`/admin/members/${encodeURIComponent(id)}/deactivate`, { method: "POST" }).then(
+    (r) => r.member,
+  );
+}
+
+export function reactivateMember(id: string): Promise<Member> {
+  return api<{ member: Member }>(`/admin/members/${encodeURIComponent(id)}/reactivate`, { method: "POST" }).then(
+    (r) => r.member,
+  );
+}
+
 export function getConsentPolicy(): Promise<ConsentPolicy> {
   return api<{ policy: ConsentPolicy }>("/admin/consent-policy").then((r) => r.policy);
 }
