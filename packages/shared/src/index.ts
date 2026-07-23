@@ -26,6 +26,12 @@ export interface User {
    */
   bubbleHue?: number;
   deactivated?: boolean;
+  /**
+   * Membership state within the org. Absent = active (seeded/existing users).
+   * A real Microsoft sign-in provisions as `pending` and can't reach content
+   * until an org admin approves it; the bootstrap admin is provisioned active.
+   */
+  status?: "active" | "pending";
 }
 
 export type MeetingMode = "virtual_desktop" | "in_person" | "mobile_speakerphone";

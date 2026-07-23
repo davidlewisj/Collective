@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { devLoginAllowed, publicOrigin, webOrigin } from "../src/config.js";
+import { bootstrapAdminEmail, devLoginAllowed, publicOrigin, webOrigin } from "../src/config.js";
 import { oauthConfigFromEnv } from "../src/oauth.js";
 import { graphConfigFromEnv } from "../src/msgraph.js";
 
@@ -55,5 +55,17 @@ describe("dev-login gate", () => {
     expect(devLoginAllowed({ RENDER_EXTERNAL_URL: "https://c.onrender.com", COLLECTIVE_ALLOW_DEV_LOGIN: "1" })).toBe(true);
     // Force OFF even in local dev.
     expect(devLoginAllowed({ COLLECTIVE_ALLOW_DEV_LOGIN: "0" })).toBe(false);
+  });
+});
+
+describe("bootstrap-admin email", () => {
+  it("is undefined when unset or blank", () => {
+    expect(bootstrapAdminEmail({})).toBeUndefined();
+    expect(bootstrapAdminEmail({ COLLECTIVE_BOOTSTRAP_ADMIN: "" })).toBeUndefined();
+    expect(bootstrapAdminEmail({ COLLECTIVE_BOOTSTRAP_ADMIN: "   " })).toBeUndefined();
+  });
+
+  it("normalizes to trimmed lowercase", () => {
+    expect(bootstrapAdminEmail({ COLLECTIVE_BOOTSTRAP_ADMIN: "  Owner@Clinic.EXAMPLE  " })).toBe("owner@clinic.example");
   });
 });

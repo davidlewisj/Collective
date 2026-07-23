@@ -6,12 +6,15 @@ Every content read is audit-logged server-side. All list/detail responses are AC
 
 | Method & path | Body → Response | Notes |
 |---|---|---|
-| POST `/auth/dev-login` | `{email}` → `{token, user}` | Seeded users; 404 for unknown email |
-| GET `/auth/config` | → `{microsoft}` | Which sign-in methods are configured |
-| GET `/auth/microsoft` → `/auth/callback` | OAuth2 code flow (Entra ID, confidential client) | id_token verified (RS256 signature against the tenant JWKS, then iss/aud/exp); links by email or auto-provisions as member; session token returned via `WEB_ORIGIN/login#msToken=`; Graph refresh token stored for calendar naming |
+| POST `/auth/dev-login` | `{email}` → `{token, user}` | Seeded users; 404 for unknown email; **403 when dev-login is disabled** (public deploys — D17). Seeding itself only runs where dev-login is allowed |
+| GET `/auth/config` | → `{microsoft, devLogin}` | Which sign-in methods are configured; `devLogin` gates the web login form's passwordless affordance |
+| GET `/auth/microsoft` → `/auth/callback` | OAuth2 code flow (Entra ID, confidential client) | id_token verified (RS256 signature against the tenant JWKS, then iss/aud/exp); links by email or provisions into the single org (§8.1 D18). The `COLLECTIVE_BOOTSTRAP_ADMIN` email is provisioned/promoted to an **active `org_admin`**; every other new account joins **`pending`**. Session token returned via `WEB_ORIGIN/login#msToken=`; Graph refresh token stored for calendar naming |
 | PUT `/admin/users/:id/role` | `{role}` → `{user}` | org_admin; not on yourself; audit-logged |
-| GET `/me` | → `{user}` | |
-| GET `/users` | → `{users}` | Directory (id, displayName, role, speakerHue) for pickers |
+| GET `/me` | → `{user}` | `user.status` is `active` or `pending`; the **only** route a pending member may call (everything else 403s until approved) |
+| GET `/users` | → `{users}` | Directory (id, displayName, role, speakerHue, bubbleHue) for pickers; **active members only** — pending (unapproved) and deactivated accounts are excluded |
+| GET `/admin/members` | → `{members:[{id, email, displayName, role, status, deactivated}]}` | org_admin; full org directory, **pending first** (join requests), then active alphabetical |
+| POST `/admin/members/:id/approve` | → `{member}` | org_admin; `pending → active` (409 if not pending); audited `admin.member_approved` |
+| POST `/admin/members/:id/deny` | → `{ok}` | org_admin; deletes the unapproved account and revokes its sessions (409 if not pending); audited `admin.member_denied` |
 | GET `/meetings` | `?q=&participant=` → `{meetings}` | Accessible meetings, newest first |
 | POST `/meetings` | `{title?, mode, attendeeUserIds?}` → `{meeting}` | Creates `draft`; owner = caller |
 | GET `/meetings/:id` | → `{meeting, myLayers}` | `myLayers`: which layers caller may read |

@@ -36,7 +36,7 @@ import { search } from "./search.js";
 import { Db, linkOrProvisionUser, newId, userByEmail } from "./store.js";
 import { MsGraph } from "./msgraph.js";
 import { OAUTH_SCOPES, OAuthProvider } from "./oauth.js";
-import { devLoginAllowed, webOrigin as resolveWebOrigin } from "./config.js";
+import { bootstrapAdminEmail, devLoginAllowed, webOrigin as resolveWebOrigin } from "./config.js";
 import { Transcriber } from "./adapters/transcriber.js";
 import { MockVoiceEngine, VoiceEngine } from "./adapters/voice.js";
 import { AudioStore, MemoryAudioStore } from "./persist.js";
@@ -200,7 +200,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     try {
       const tokens = await graph.exchangeCode(q.code);
       if (!tokens.claims.email) return back("msError=no_email_claim");
-      const user = linkOrProvisionUser(db, tokens.claims);
+      const user = linkOrProvisionUser(db, tokens.claims, { bootstrapAdminEmail: bootstrapAdminEmail() });
       if (user.deactivated) return back("msError=account_deactivated");
       if (tokens.refreshToken) {
         db.graphAuth.set(user.id, {
@@ -367,7 +367,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       // 3. A normal signed-in session (same-origin / in-app use).
       const s = db.sessions.get(token);
       const sUser = s && db.users.get(s.userId);
-      if (s && sUser && !sUser.deactivated && Date.now() - s.lastSeenAt <= db.idleMinutes * 60 * 1000) {
+      if (s && sUser && !sUser.deactivated && sUser.status !== "pending" && Date.now() - s.lastSeenAt <= db.idleMinutes * 60 * 1000) {
         s.lastSeenAt = Date.now();
         req.user = sUser;
         req.mcpScopes = [...OAUTH_SCOPES];
@@ -386,6 +386,11 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     session.lastSeenAt = Date.now();
     const user = db.users.get(session.userId);
     if (!user || user.deactivated) return fail(reply, 401, "unauthenticated");
+    // Pending members are authenticated but not yet approved: they may read
+    // their own status (to see the pending screen) and nothing else.
+    if (user.status === "pending" && path !== "/me") {
+      return fail(reply, 403, "membership pending approval");
+    }
     req.user = user;
   });
 
@@ -464,13 +469,17 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     return { ok: true };
   });
   app.get("/users", async () => ({
-    users: [...db.users.values()].map(({ id, displayName, role, speakerHue, bubbleHue }) => ({
-      id,
-      displayName,
-      role,
-      speakerHue,
-      bubbleHue,
-    })),
+    // Active members only — pending (unapproved) and deactivated accounts never
+    // appear in attendee pickers, share targets, or speaker attribution.
+    users: [...db.users.values()]
+      .filter((u) => !u.deactivated && u.status !== "pending")
+      .map(({ id, displayName, role, speakerHue, bubbleHue }) => ({
+        id,
+        displayName,
+        role,
+        speakerHue,
+        bubbleHue,
+      })),
   }));
 
   app.put("/me/appearance", async (req, reply) => {
@@ -966,6 +975,50 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     target.role = role;
     audit.emit({ actorUserId: req.user.id, action: "admin.role_changed", detail: `${id} → ${role}` });
     return { user: target };
+  });
+
+  /* --------------------- directory & join approvals -------------------- */
+
+  const memberView = (u: User) => ({
+    id: u.id,
+    email: u.email,
+    displayName: u.displayName,
+    role: u.role,
+    status: (u.status ?? "active") as "active" | "pending",
+    deactivated: !!u.deactivated,
+  });
+
+  app.get("/admin/members", async (req, reply) => {
+    // Full org directory (active + pending), for the admin's own org.
+    adminOnly(req, reply);
+    const members = [...db.users.values()]
+      .filter((u) => u.entityId === req.user.entityId)
+      .map(memberView)
+      .sort((a, b) => (a.status === b.status ? a.displayName.localeCompare(b.displayName) : a.status === "pending" ? -1 : 1));
+    return { members };
+  });
+
+  app.post("/admin/members/:id/approve", async (req, reply) => {
+    adminOnly(req, reply);
+    const target = db.users.get((req.params as { id: string }).id);
+    if (!target || target.entityId !== req.user.entityId) return fail(reply, 404, "unknown user");
+    if (target.status !== "pending") return fail(reply, 409, "not a pending member");
+    target.status = "active";
+    audit.emit({ actorUserId: req.user.id, action: "admin.member_approved", detail: target.id });
+    return { member: memberView(target) };
+  });
+
+  app.post("/admin/members/:id/deny", async (req, reply) => {
+    // Denying a join request removes the unapproved account entirely; they can
+    // request again by signing in. Only pending accounts can be denied.
+    adminOnly(req, reply);
+    const target = db.users.get((req.params as { id: string }).id);
+    if (!target || target.entityId !== req.user.entityId) return fail(reply, 404, "unknown user");
+    if (target.status !== "pending") return fail(reply, 409, "not a pending member");
+    db.users.delete(target.id);
+    for (const [k, s] of db.sessions) if (s.userId === target.id) db.sessions.delete(k);
+    audit.emit({ actorUserId: req.user.id, action: "admin.member_denied", detail: target.id });
+    return { ok: true };
   });
 
   /* -------- MCP OAuth client allowlist (org_admin; spec §6.4) --------- */

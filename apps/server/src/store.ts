@@ -155,7 +155,7 @@ const ENTITY = "entity_main"; // single-entity deployment per resolved Q1
 export function seedUsers(db: Db): void {
   const mk = (email: string, displayName: string, role: User["role"]): User => {
     const id = `u_${email.split("@")[0]}`;
-    return { id, email, displayName, role, entityId: ENTITY, speakerHue: speakerHueForId(id) };
+    return { id, email, displayName, role, entityId: ENTITY, speakerHue: speakerHueForId(id), status: "active" };
   };
   for (const u of [
     mk("dana@collective.dev", "Dana Whitfield", "org_admin"),
@@ -184,24 +184,38 @@ export function userByEmail(db: Db, email: string): User | undefined {
 }
 
 /**
- * Microsoft sign-in user mapping: link by email when the account matches an
- * existing user; otherwise auto-provision as a member (least privilege — an
- * org_admin can promote via PUT /admin/users/:id/role).
+ * Microsoft sign-in user mapping into the single org (Q1). The bootstrap-admin
+ * email is provisioned (or promoted, if it already exists) to an active
+ * `org_admin` — otherwise a fresh production directory would have no admin to
+ * approve anyone. Every other new account joins as a **pending** member and
+ * stays out of all content until an org admin approves it.
  */
 export function linkOrProvisionUser(
   db: Db,
   claims: { email: string; name: string; oid: string },
+  opts: { bootstrapAdminEmail?: string } = {},
 ): User {
+  const isBootstrapAdmin =
+    !!opts.bootstrapAdminEmail && claims.email.toLowerCase() === opts.bootstrapAdminEmail.toLowerCase();
   const existing = userByEmail(db, claims.email);
-  if (existing) return existing;
+  if (existing) {
+    // Idempotent bootstrap: guarantee the named admin is an active org_admin,
+    // even if they signed in (or were seeded) before the env was set.
+    if (isBootstrapAdmin && (existing.role !== "org_admin" || existing.status === "pending")) {
+      existing.role = "org_admin";
+      existing.status = "active";
+    }
+    return existing;
+  }
   const id = `u_ms_${claims.oid.replace(/[^a-zA-Z0-9]/g, "").slice(0, 12) || Date.now().toString(36)}`;
   const user: User = {
     id,
     email: claims.email.toLowerCase(),
     displayName: claims.name,
-    role: "member",
+    role: isBootstrapAdmin ? "org_admin" : "member",
     entityId: ENTITY,
     speakerHue: speakerHueForId(id),
+    status: isBootstrapAdmin ? "active" : "pending",
   };
   db.users.set(id, user);
   return user;
